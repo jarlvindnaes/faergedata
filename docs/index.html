@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Færgedata Terminal – Femø · Askø · Fejø</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>⛴</text></svg>">
+<style>
+  .viz-root {
+    color-scheme: light;
+    --surface-1: #fcfcfb; --page: #f9f9f7;
+    --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #898781;
+    --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.10);
+    --femo: #2a78d6; --asko: #eb6834; --fejo: #1baf7a;
+    --critical: #d03b3b; --good-text: #006300;
+    --seq-100:#cde2fb; --seq-200:#9ec5f4; --seq-300:#6da7ec; --seq-400:#3987e5;
+    --seq-500:#256abf; --seq-600:#184f95;
+    --up: #006300; --down: #d03b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) .viz-root {
+      color-scheme: dark;
+      --surface-1: #1a1a19; --page: #0d0d0d;
+      --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #898781;
+      --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+      --femo: #3987e5; --asko: #d95926; --fejo: #199e70;
+      --critical: #d03b3b; --good-text: #0ca30c; --up: #0ca30c; --down: #e66767;
+    }
+  }
+  :root[data-theme="dark"] .viz-root {
+    color-scheme: dark;
+    --surface-1: #1a1a19; --page: #0d0d0d;
+    --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+    --femo: #3987e5; --asko: #d95926; --fejo: #199e70;
+    --critical: #d03b3b; --good-text: #0ca30c; --up: #0ca30c; --down: #e66767;
+  }
+  * { box-sizing: border-box; }
+  body.viz-root {
+    margin: 0; background: var(--page); color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 14px; line-height: 1.45;
+  }
+  .wrap { max-width: 1160px; margin: 0 auto; padding: 20px 16px 64px; }
+  .topbar { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+  .topbar h1 { font-size: 20px; margin: 0; letter-spacing: 0.04em; }
+  .topbar .live { color: var(--text-muted); font-size: 12px; flex: 1; }
+  #themeToggle {
+    background: var(--surface-1); color: var(--text-secondary); border: 1px solid var(--border);
+    border-radius: 8px; padding: 5px 12px; font: inherit; font-size: 12px; cursor: pointer;
+  }
+  .subtitle { color: var(--text-secondary); margin: 6px 0 16px; max-width: 78ch; }
+
+  /* Island tickers */
+  .tickers { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-bottom: 14px; }
+  .ticker {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
+    padding: 12px 14px; cursor: pointer; text-align: left; font: inherit; color: inherit;
+  }
+  .ticker[aria-pressed="true"] { outline: 2px solid var(--tick-color); outline-offset: -2px; }
+  .ticker .sym { display: flex; align-items: center; gap: 8px; font-weight: 700; letter-spacing: 0.06em; font-size: 13px; }
+  .ticker .sym .dot { width: 10px; height: 10px; border-radius: 3px; background: var(--tick-color); }
+  .ticker .sym .route { color: var(--text-muted); font-weight: 400; letter-spacing: 0; }
+  .ticker .big { font-size: 28px; font-weight: 600; margin-top: 4px; }
+  .ticker .big .unit { font-size: 14px; color: var(--text-secondary); font-weight: 400; }
+  .ticker .row2 { display: flex; justify-content: space-between; align-items: flex-end; gap: 8px; }
+  .ticker .stats { color: var(--text-muted); font-size: 12px; margin-top: 2px; }
+  .ticker .alert { color: var(--critical); font-weight: 600; }
+
+  .filters { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0 14px; align-items: center; }
+  .filters select, .filters .seg button {
+    background: var(--surface-1); color: var(--text-primary);
+    border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; font: inherit; font-size: 13px;
+  }
+  .seg { display: inline-flex; gap: 4px; }
+  .seg button { cursor: pointer; color: var(--text-secondary); }
+  .seg button[aria-pressed="true"] { color: var(--text-primary); font-weight: 600; border-color: var(--axis); }
+
+  .grid2 { display: grid; grid-template-columns: 2fr 1fr; gap: 14px; }
+  @media (max-width: 860px) { .grid2 { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 12px; padding: 14px 16px; margin-bottom: 14px; min-width: 0;
+  }
+  .panel h2 { font-size: 14px; margin: 0 0 2px; letter-spacing: 0.02em; }
+  .panel .desc { color: var(--text-muted); font-size: 12px; margin: 0 0 10px; }
+  .legend { display: flex; gap: 14px; font-size: 12px; color: var(--text-secondary); margin-top: 8px; flex-wrap: wrap; }
+  .legend .key { display: inline-flex; align-items: center; gap: 6px; }
+  .swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+  .linekey { width: 14px; height: 2px; display: inline-block; }
+  svg text { font-family: inherit; }
+
+  #alerts .alert-row { display: flex; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--grid); font-size: 13px; align-items: baseline; }
+  #alerts .alert-row:last-child { border-bottom: none; }
+  #alerts .badge {
+    background: var(--critical); color: #fff; border-radius: 6px; padding: 1px 7px;
+    font-size: 11px; font-weight: 700; letter-spacing: 0.04em; flex-shrink: 0;
+  }
+  #alerts .when { color: var(--text-secondary); }
+  #alerts .lead { color: var(--text-muted); font-size: 12px; margin-left: auto; flex-shrink: 0; }
+
+  #tooltip {
+    position: fixed; pointer-events: none; z-index: 10; display: none;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 10px; font-size: 12px; box-shadow: 0 4px 16px rgba(0,0,0,.2); max-width: 280px;
+  }
+  #tooltip .tt-value { font-weight: 600; font-size: 13px; }
+  #tooltip .tt-label { color: var(--text-secondary); }
+  #tooltip .lk { display: inline-block; width: 12px; height: 2px; margin-right: 5px; vertical-align: middle; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--text-secondary); font-weight: 500; border-bottom: 1px solid var(--grid); padding: 6px 8px; white-space: nowrap; }
+  td { border-bottom: 1px solid var(--grid); padding: 6px 8px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.full { color: var(--critical); font-weight: 600; }
+  .heat { display: grid; gap: 2px; }
+  .heat .cell { border-radius: 3px; min-height: 24px; display: flex; align-items: center; justify-content: center; font-size: 11px; }
+  .heat .rowlab { background: none; color: var(--text-muted); justify-content: flex-start; white-space: nowrap; overflow: hidden; }
+  .heat .collab { background: none; color: var(--text-muted); }
+  .empty-note { color: var(--text-muted); }
+  select { max-width: 100%; }
+  footer { color: var(--text-muted); font-size: 12px; margin-top: 20px; max-width: 80ch; }
+  a { color: var(--femo); }
+</style>
+</head>
+<body class="viz-root">
+<div class="wrap">
+  <div class="topbar">
+    <h1>FÆRGEDATA · SMÅLANDSFARVANDET</h1>
+    <span class="live" id="meta">Indlæser …</span>
+    <button id="themeToggle" aria-label="Skift mellem lyst og mørkt tema">◐ Tema</button>
+  </div>
+  <p class="subtitle">Belægning og bookingpres på Lolland Kommunes færger til Femø, Askø og Fejø —
+     målt direkte fra kommunens eget bookingsystem, hver 2. time, døgnet rundt.</p>
+
+  <div class="tickers" id="tickers"></div>
+
+  <div class="filters">
+    <span class="seg" id="islandSeg" role="group" aria-label="Vælg ø"></span>
+    <select id="rangeFilter" aria-label="Periode for historik">
+      <option value="7">Sidste 7 dage</option>
+      <option value="30" selected>Sidste 30 dage</option>
+      <option value="90">Sidste 90 dage</option>
+      <option value="all">Hele perioden</option>
+    </select>
+  </div>
+
+  <div class="panel">
+    <h2>FORWARD-KURVE · Bookede bilpladser 14 dage frem</h2>
+    <p class="desc">Hvor stor en andel af bilpladserne er allerede booket pr. dag (gennemsnit over dagens afgange, begge retninger). Som en futures-kurve: jo højere, jo mindre plads til øboerne.</p>
+    <div id="forwardChart"></div>
+    <div class="legend" id="forwardLegend"></div>
+  </div>
+
+  <div class="grid2">
+    <div class="panel">
+      <h2>HISTORIK · Belægning ved afgang</h2>
+      <p class="desc">Daglig gennemsnitlig bilbelægning ved afgang (sejlede afgange). Bygger sig op efterhånden som terminalen samler data.</p>
+      <div id="historyChart"></div>
+      <div class="legend" id="historyLegend"></div>
+    </div>
+    <div class="panel">
+      <h2>⚠ UDSOLGT-ALARMER</h2>
+      <p class="desc">Kommende afgange uden en eneste ledig bilplads, lige nu.</p>
+      <div id="alerts"></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>PRES-MATRIX · Ledige bilpladser pr. afgang, 14 dage frem</h2>
+    <p class="desc">Mørkere = mere booket. Rød = fuld. Med "Alle øer" vises dagens mest pressede afgang pr. overfart — vælg en ø for at folde alle afgangstider ud.</p>
+    <div id="heatWrap"></div>
+  </div>
+
+  <div class="grid2">
+    <div class="panel">
+      <h2>INTRADAG · Bookingkurve for én afgang</h2>
+      <p class="desc">Ledige bilpladser frem mod afgang — sorteret så de mest pressede afgange ligger øverst.</p>
+      <select id="curveSelect" style="margin-bottom:10px"></select>
+      <div id="curveChart"></div>
+    </div>
+    <div class="panel">
+      <h2>NØGLETAL · valgt periode</h2>
+      <p class="desc">Sejlede afgange i den valgte periode og ø.</p>
+      <div id="kpis"></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>ORDREBOG · alle afgange</h2>
+    <p class="desc">Endelig tilstand pr. afgang (sidste måling før afgang); kommende afgange viser aktuel status.</p>
+    <div style="overflow-x:auto"><table id="depTable"></table></div>
+  </div>
+
+  <footer>
+    Datakilde: <a href="https://lolland-ferry.teambooking.dk/timetable">Lolland Færgefarts offentlige bookingsystem</a>.
+    Bilkapacitet pr. rute er estimeret som største observerede antal ledige pladser (en nedre grænse) —
+    belægningsprocenter er derfor konservative. Alle rå målinger ligger tidsstemplet i git-historikken
+    og kan efterprøves af enhver.
+  </footer>
+</div>
+<div id="tooltip" role="status"></div>
+
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+const TT = $("#tooltip");
+const ISLANDS = [
+  { id: 411, key: "femo", name: "FEMØ", route: "Kragenæs–Femø" },
+  { id: 413, key: "asko", name: "ASKØ", route: "Kragenæs–Askø" },
+  { id: 414, key: "fejo", name: "FEJØ", route: "Kragenæs–Fejø" },
+];
+const cssVar = n => getComputedStyle(document.body).getPropertyValue(n).trim();
+const iColor = i => cssVar("--" + i.key);
+const fmtDate = s => new Date(s + "T00:00:00").toLocaleDateString("da-DK", { day: "numeric", month: "short" });
+const fmtDT = s => new Date(s).toLocaleString("da-DK", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+const pct = v => Math.round(v * 100) + " %";
+let DATA = null, selIsland = "all";
+
+/* ---------- theme toggle ---------- */
+$("#themeToggle").onclick = () => {
+  const r = document.documentElement;
+  const dark = r.dataset.theme ? r.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  r.dataset.theme = dark ? "light" : "dark";
+  render();
+};
+
+/* ---------- tooltip ---------- */
+function showTT(evt, nodes) {
+  TT.replaceChildren(...nodes); TT.style.display = "block";
+  const pad = 12, w = TT.offsetWidth, h = TT.offsetHeight;
+  let x = evt.clientX + pad, y = evt.clientY + pad;
+  if (x + w > innerWidth - 8) x = evt.clientX - w - pad;
+  if (y + h > innerHeight - 8) y = evt.clientY - h - pad;
+  TT.style.left = x + "px"; TT.style.top = y + "px";
+}
+const hideTT = () => TT.style.display = "none";
+function ttNode(rows) { /* rows: [color|null, label, value, strong] */
+  return rows.map(([color, label, value, strong]) => {
+    const d = document.createElement("div");
+    if (color) { const k = document.createElement("span"); k.className = "lk"; k.style.background = color; d.append(k); }
+    if (label) { const l = document.createElement("span"); l.className = "tt-label"; l.textContent = label + ": "; d.append(l); }
+    const v = document.createElement("span"); v.className = strong ? "tt-value" : "tt-label"; v.textContent = value; d.append(v);
+    return d;
+  });
+}
+
+/* ---------- data helpers ---------- */
+function occupancy(d) { // andel af bilpladser booket (0..1) eller null
+  if (!d.car_capacity_est) return null;
+  return Math.max(0, Math.min(1, (d.car_capacity_est - d.final_avail_cars) / d.car_capacity_est));
+}
+function inRange(d) {
+  const range = $("#rangeFilter").value;
+  if (range === "all" || !d.sailed) return true;
+  return new Date(d.depart) >= new Date(Date.now() - range * 864e5);
+}
+const byIsland = id => DATA.departures.filter(d => d.route_id === id);
+const visible = () => DATA.departures.filter(d =>
+  (selIsland === "all" || d.route_id === Number(selIsland)) && inRange(d));
+
+/* ---------- tickers ---------- */
+function renderTickers() {
+  const wrap = $("#tickers");
+  wrap.replaceChildren(...ISLANDS.map(isl => {
+    const deps = byIsland(isl.id);
+    const upcoming = deps.filter(d => !d.sailed);
+    const next7 = upcoming.filter(d => new Date(d.depart) < new Date(Date.now() + 7 * 864e5));
+    const occs = next7.map(occupancy).filter(v => v !== null);
+    const avgOcc = occs.length ? occs.reduce((a, b) => a + b) / occs.length : null;
+    const full = upcoming.filter(d => d.soldout_cars).length;
+    const b = document.createElement("button");
+    b.className = "ticker"; b.style.setProperty("--tick-color", iColor(isl));
+    b.setAttribute("aria-pressed", String(selIsland === String(isl.id)));
+    const sym = document.createElement("div"); sym.className = "sym";
+    const dot = document.createElement("span"); dot.className = "dot";
+    const nm = document.createElement("span"); nm.textContent = isl.name;
+    const rt = document.createElement("span"); rt.className = "route"; rt.textContent = isl.route;
+    sym.append(dot, nm, rt);
+    const row2 = document.createElement("div"); row2.className = "row2";
+    const big = document.createElement("div"); big.className = "big";
+    big.textContent = avgOcc === null ? "–" : Math.round(avgOcc * 100) + "";
+    const unit = document.createElement("span"); unit.className = "unit"; unit.textContent = " % booket · 7 dg";
+    big.append(unit);
+    row2.append(big, sparkline(isl));
+    const stats = document.createElement("div"); stats.className = "stats";
+    stats.textContent = `${next7.length} afgange næste 7 dg · `;
+    const al = document.createElement("span");
+    al.className = full ? "alert" : "";
+    al.textContent = full ? `${full} helt fulde` : "ingen fulde";
+    stats.append(al);
+    b.append(sym, row2, stats);
+    b.onclick = () => { selIsland = selIsland === String(isl.id) ? "all" : String(isl.id); render(); };
+    return b;
+  }));
+}
+function sparkline(isl) { // 12-punkts forward-belægning
+  const days = forwardDays(isl.id).slice(0, 12);
+  const span = document.createElement("span");
+  if (days.length < 2) return span;
+  const W = 84, H = 30;
+  const max = 1;
+  const x = i => 2 + i * (W - 8) / (days.length - 1);
+  const y = v => H - 4 - (H - 10) * (v / max);
+  const path = days.map((d, i) => (i ? "L" : "M") + x(i).toFixed(1) + "," + y(d.occ).toFixed(1)).join(" ");
+  const c = iColor(isl), last = days[days.length - 1];
+  span.innerHTML = `<svg width="${W}" height="${H}" aria-hidden="true">
+    <path d="${path}" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.85"/>
+    <circle cx="${x(days.length-1)}" cy="${y(last.occ)}" r="3.5" fill="${c}" stroke="${cssVar("--surface-1")}" stroke-width="2"/></svg>`;
+  return span;
+}
+function forwardDays(routeId) {
+  const out = new Map();
+  for (const d of DATA.departures) {
+    if (d.sailed || d.route_id !== routeId) continue;
+    const o = occupancy(d); if (o === null) continue;
+    const day = d.depart.slice(0, 10);
+    if (!out.has(day)) out.set(day, []);
+    out.get(day).push(o);
+  }
+  return [...out.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([day, arr]) => ({ day, occ: arr.reduce((a, b) => a + b) / arr.length }));
+}
+
+/* ---------- generic multi-line chart ---------- */
+function lineChart(el, seriesList, opts) {
+  // seriesList: [{name, color, points:[{x(label), v(0..1|number)}]}]
+  const W = Math.min(1120, el.clientWidth || 800), H = opts.h || 240, mL = 40, mB = 30, mT = 12, mR = 74;
+  const allDays = [...new Set(seriesList.flatMap(s => s.points.map(p => p.x)))].sort();
+  if (!allDays.length) { el.textContent = opts.empty; el.classList.add("empty-note"); return; }
+  el.classList.remove("empty-note");
+  const maxV = opts.max ?? Math.max(...seriesList.flatMap(s => s.points.map(p => p.v)), 0.01);
+  const x = d => mL + (W - mL - mR) * (allDays.length === 1 ? 0.5 : allDays.indexOf(d) / (allDays.length - 1));
+  const y = v => mT + (H - mT - mB) * (1 - v / maxV);
+  let svg = `<svg width="${W}" height="${H}" role="img" aria-label="${opts.aria}">`;
+  const steps = opts.pct ? [0, .25, .5, .75, 1] : niceTicks(maxV);
+  for (const g of steps) {
+    if (g > maxV) continue;
+    svg += `<line x1="${mL}" x2="${W-mR}" y1="${y(g)}" y2="${y(g)}" stroke="${cssVar("--grid")}"/>` +
+           `<text x="${mL-6}" y="${y(g)+4}" text-anchor="end" font-size="11" fill="${cssVar("--text-muted")}">${opts.pct ? Math.round(g*100)+" %" : g}</text>`;
+  }
+  const nLab = Math.max(1, Math.ceil(allDays.length / 8));
+  allDays.forEach((d, i) => {
+    if (i % nLab === 0) svg += `<text x="${x(d)}" y="${H-mB+16}" text-anchor="middle" font-size="11" fill="${cssVar("--text-muted")}">${fmtDate(d)}</text>`;
+  });
+  // direkte endelabels med kollisionsjustering
+  const ends = [];
+  for (const s of seriesList) {
+    const pts = s.points.filter(p => p.v !== null);
+    if (!pts.length) continue;
+    const path = pts.map((p, i) => (i ? "L" : "M") + x(p.x).toFixed(1) + "," + y(p.v).toFixed(1)).join(" ");
+    svg += `<path d="${path}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+    const lp = pts[pts.length - 1];
+    svg += `<circle cx="${x(lp.x)}" cy="${y(lp.v)}" r="4" fill="${s.color}" stroke="${cssVar("--surface-1")}" stroke-width="2"/>`;
+    ends.push({ s, yPos: y(lp.v), xPos: x(lp.x) });
+  }
+  ends.sort((a, b) => a.yPos - b.yPos);
+  for (let i = 1; i < ends.length; i++) if (ends[i].yPos - ends[i-1].yPos < 14) ends[i].yPos = ends[i-1].yPos + 14;
+  for (const e of ends)
+    svg += `<line x1="${e.xPos+5}" y1="${e.yPos}" x2="${W-mR+6}" y2="${e.yPos}" stroke="${cssVar("--grid")}"/>` +
+           `<text x="${W-mR+9}" y="${e.yPos+4}" font-size="12" fill="${cssVar("--text-primary")}">${e.s.name}</text>`;
+  svg += `<line x1="${mL}" x2="${W-mR}" y1="${y(0)}" y2="${y(0)}" stroke="${cssVar("--axis")}"/>` +
+         `<line id="xhair" x1="0" x2="0" y1="${mT}" y2="${y(0)}" stroke="${cssVar("--axis")}" visibility="hidden"/></svg>`;
+  el.innerHTML = svg;
+  const svgEl = el.querySelector("svg"), xh = el.querySelector("#xhair");
+  svgEl.addEventListener("pointermove", evt => {
+    const rect = svgEl.getBoundingClientRect();
+    const rel = (evt.clientX - rect.left - mL) / (W - mL - mR);
+    const idx = Math.max(0, Math.min(allDays.length - 1, Math.round(rel * (allDays.length - 1))));
+    const day = allDays[idx];
+    xh.setAttribute("x1", x(day)); xh.setAttribute("x2", x(day)); xh.setAttribute("visibility", "visible");
+    const rows = [[null, "", fmtDate(day), true]];
+    for (const s of seriesList) {
+      const p = s.points.find(p => p.x === day);
+      if (p) rows.push([s.color, s.name, opts.pct ? pct(p.v) : String(p.v), false]);
+    }
+    showTT(evt, ttNode(rows));
+  });
+  svgEl.addEventListener("pointerleave", () => { xh.setAttribute("visibility", "hidden"); hideTT(); });
+}
+function niceTicks(max) {
+  const step = Math.max(1, Math.ceil(max / 4));
+  const out = []; for (let g = 0; g <= max; g += step) out.push(g); return out;
+}
+function legendFor(el, seriesList) {
+  el.replaceChildren(...seriesList.map(s => {
+    const k = document.createElement("span"); k.className = "key";
+    const sw = document.createElement("span"); sw.className = "linekey"; sw.style.background = s.color;
+    const t = document.createElement("span"); t.textContent = s.name;
+    k.append(sw, t); return k;
+  }));
+}
+
+/* ---------- panels ---------- */
+function activeIslands() {
+  return selIsland === "all" ? ISLANDS : ISLANDS.filter(i => String(i.id) === selIsland);
+}
+function renderForward() {
+  const series = activeIslands().map(isl => ({
+    name: isl.name, color: iColor(isl),
+    points: forwardDays(isl.id).map(d => ({ x: d.day, v: d.occ })),
+  })).filter(s => s.points.length);
+  lineChart($("#forwardChart"), series, { pct: true, max: 1, aria: "Andel bookede bilpladser pr. dag, 14 dage frem", empty: "Ingen kommende afgange." });
+  legendFor($("#forwardLegend"), series);
+}
+function renderHistory() {
+  const series = activeIslands().map(isl => {
+    const byDay = new Map();
+    for (const d of DATA.departures) {
+      if (!d.sailed || d.route_id !== isl.id || !inRange(d)) continue;
+      const o = occupancy(d); if (o === null) continue;
+      const day = d.depart.slice(0, 10);
+      if (!byDay.has(day)) byDay.set(day, []);
+      byDay.get(day).push(o);
+    }
+    return { name: isl.name, color: iColor(isl),
+      points: [...byDay.entries()].sort((a,b) => a[0].localeCompare(b[0]))
+        .map(([day, arr]) => ({ x: day, v: arr.reduce((a,b) => a+b) / arr.length })) };
+  }).filter(s => s.points.length);
+  lineChart($("#historyChart"), series, { pct: true, max: 1, h: 240,
+    aria: "Daglig gennemsnitlig bilbelægning ved afgang",
+    empty: "Endnu ingen sejlede afgange målt — historikken vokser fra første døgn." });
+  legendFor($("#historyLegend"), series);
+}
+function renderAlerts() {
+  const el = $("#alerts");
+  const full = visible().filter(d => !d.sailed && d.soldout_cars)
+    .sort((a, b) => a.depart.localeCompare(b.depart)).slice(0, 12);
+  if (!full.length) { el.textContent = "Ingen helt fulde afgange lige nu."; el.classList.add("empty-note"); return; }
+  el.classList.remove("empty-note");
+  el.replaceChildren(...full.map(d => {
+    const row = document.createElement("div"); row.className = "alert-row";
+    const b = document.createElement("span"); b.className = "badge"; b.textContent = "FULD";
+    const w = document.createElement("span"); w.className = "when"; w.textContent = fmtDT(d.depart);
+    const c = document.createElement("span"); c.textContent = d.crossing;
+    const lead = document.createElement("span"); lead.className = "lead";
+    const hrs = (new Date(d.depart) - Date.now()) / 36e5;
+    lead.textContent = hrs > 48 ? Math.round(hrs / 24) + " dg til afgang" : Math.round(hrs) + " t til afgang";
+    row.append(b, w, c, lead);
+    return row;
+  }));
+}
+function renderHeat() {
+  const el = $("#heatWrap");
+  const upcoming = visible().filter(d => !d.sailed);
+  const compact = selIsland === "all"; // én række pr. overfart; celle = dagens mest pressede afgang
+  const byDay = new Map();
+  for (const d of upcoming) {
+    const day = d.depart.slice(0, 10);
+    if (!byDay.has(day)) byDay.set(day, new Map());
+    if (compact) {
+      const k = d.crossing;
+      const prev = byDay.get(day).get(k);
+      if (!prev || d.final_avail_cars < prev.final_avail_cars) byDay.get(day).set(k, d);
+    } else {
+      byDay.get(day).set(d.depart.slice(11, 16) + "|" + d.crossing, d);
+    }
+  }
+  const days = [...byDay.keys()].sort().slice(0, 14);
+  if (!days.length) { el.textContent = "Ingen kommende afgange."; el.classList.add("empty-note"); return; }
+  el.classList.remove("empty-note");
+  const rowKeys = [...new Set(days.flatMap(d => [...byDay.get(d).keys()]))].sort();
+  const grid = document.createElement("div"); grid.className = "heat";
+  grid.style.gridTemplateColumns = `128px repeat(${days.length}, 1fr)`;
+  const mkCell = (t, cls) => { const c = document.createElement("div"); c.className = "cell " + cls; c.textContent = t; return c; };
+  grid.append(mkCell("", "rowlab"));
+  for (const d of days) grid.append(mkCell(fmtDate(d), "collab"));
+  const seq = ["--seq-100","--seq-200","--seq-300","--seq-400","--seq-500","--seq-600"].map(cssVar);
+  for (const rk of rowKeys) {
+    const [time, crossing] = compact ? ["", rk] : rk.split("|");
+    grid.append(mkCell((time ? time + " " : "") + crossing.replace("Kragenæs", "Kr.").replace(" > ", "→"), "rowlab"));
+    for (const day of days) {
+      const d = byDay.get(day).get(rk);
+      if (!d) { grid.append(mkCell("", "")); continue; }
+      const c = document.createElement("div"); c.className = "cell"; c.tabIndex = 0;
+      const free = d.final_avail_cars, capa = d.car_capacity_est || 0;
+      if (free === 0) { c.style.background = cssVar("--critical"); c.style.color = "#fff"; c.textContent = "Fuld"; }
+      else {
+        const f = capa ? Math.max(0, Math.min(1, (capa - free) / capa)) : 0;
+        c.style.background = seq[Math.min(seq.length - 1, Math.floor(f * seq.length))];
+        c.style.color = f > 0.55 ? "#fff" : cssVar("--text-primary");
+        c.textContent = free;
+      }
+      const show = evt => showTT(evt, ttNode([
+        [null, "", d.crossing + " · " + fmtDT(d.depart), true],
+        [null, compact ? "Dagens mest pressede afgang, ledige" : "Ledige bilpladser", String(free), false],
+        [null, "Kapacitet (est.)", capa ? String(capa) : "ukendt", false],
+        [null, "Færge", d.ferry, false],
+      ]));
+      c.addEventListener("pointermove", show);
+      c.addEventListener("focus", () => show({ clientX: innerWidth / 2, clientY: 220 }));
+      c.addEventListener("pointerleave", hideTT); c.addEventListener("blur", hideTT);
+      grid.append(c);
+    }
+  }
+  el.replaceChildren(grid);
+}
+function renderCurvePanel() {
+  const sel = $("#curveSelect");
+  const deps = [...visible()].sort((a, b) =>
+    (a.final_avail_cars - b.final_avail_cars) || a.depart.localeCompare(b.depart)).slice(0, 250);
+  sel.replaceChildren(...deps.map(d => {
+    const o = document.createElement("option"); o.value = d.id;
+    o.textContent = `${fmtDT(d.depart)} · ${d.crossing} · ${d.final_avail_cars} ledige${d.sailed ? " (sejlet)" : ""}`;
+    return o;
+  }));
+  sel.onchange = () => renderCurve(sel.value);
+  if (deps.length) renderCurve(deps[0].id);
+  else $("#curveChart").textContent = "";
+}
+function renderCurve(depId) {
+  const el = $("#curveChart");
+  const curve = DATA.curves[depId] || [];
+  const dep = DATA.departures.find(d => d.id === depId);
+  if (!dep || !curve.length) { el.textContent = "Ingen målinger."; return; }
+  const W = Math.min(680, el.clientWidth || 560), H = 200, mL = 34, mB = 26, mT = 12, mR = 64;
+  const pts = curve.map(p => ({ t: new Date(p.t).getTime(), v: p.cars }));
+  const departT = new Date(dep.depart).getTime();
+  const t0 = pts[0].t, t1 = Math.max(departT, pts[pts.length - 1].t);
+  const maxV = Math.max(dep.car_capacity_est || 0, ...pts.map(p => p.v), 4);
+  const x = t => mL + (W - mL - mR) * (t1 === t0 ? 0.5 : (t - t0) / (t1 - t0));
+  const y = v => mT + (H - mT - mB) * (1 - v / maxV);
+  const isl = ISLANDS.find(i => i.id === dep.route_id);
+  const col = isl ? iColor(isl) : cssVar("--femo");
+  let svg = `<svg width="${W}" height="${H}" role="img" aria-label="Ledige bilpladser frem mod afgang">`;
+  for (const g of niceTicks(maxV))
+    svg += `<line x1="${mL}" x2="${W-mR}" y1="${y(g)}" y2="${y(g)}" stroke="${cssVar("--grid")}"/>` +
+           `<text x="${mL-6}" y="${y(g)+4}" text-anchor="end" font-size="11" fill="${cssVar("--text-muted")}">${g}</text>`;
+  svg += `<line x1="${x(departT)}" x2="${x(departT)}" y1="${mT}" y2="${y(0)}" stroke="${cssVar("--axis")}"/>` +
+         `<text x="${Math.min(x(departT), W - mR)}" y="${mT+10}" text-anchor="middle" font-size="11" fill="${cssVar("--text-muted")}">afgang</text>`;
+  const path = pts.map((p, i) => (i ? "L" : "M") + x(p.t).toFixed(1) + "," + y(p.v).toFixed(1)).join(" ");
+  if (pts.length > 1) svg += `<path d="${path}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+  const last = pts[pts.length - 1];
+  svg += `<circle cx="${x(last.t)}" cy="${y(last.v)}" r="4" fill="${col}" stroke="${cssVar("--surface-1")}" stroke-width="2"/>` +
+         `<text x="${Math.min(x(last.t)+8, W-4)}" y="${y(last.v)+4}" font-size="12" fill="${cssVar("--text-primary")}">${last.v} ledige</text>` +
+         `<line x1="${mL}" x2="${W-mR}" y1="${y(0)}" y2="${y(0)}" stroke="${cssVar("--axis")}"/></svg>`;
+  el.innerHTML = svg;
+  if (pts.length === 1) {
+    const note = document.createElement("p"); note.className = "empty-note";
+    note.style.fontSize = "12px"; note.textContent = "Kun én måling endnu — kurven tegnes efterhånden som der måles hver 2. time.";
+    el.append(note);
+  }
+  const svgEl = el.querySelector("svg");
+  svgEl.addEventListener("pointermove", evt => {
+    const rect = svgEl.getBoundingClientRect();
+    const t = t0 + (t1 - t0) * Math.max(0, Math.min(1, (evt.clientX - rect.left - mL) / (W - mL - mR)));
+    let nearest = pts[0];
+    for (const p of pts) if (Math.abs(p.t - t) < Math.abs(nearest.t - t)) nearest = p;
+    showTT(evt, ttNode([[null, "", nearest.v + " ledige bilpladser", true], [null, "Målt", fmtDT(new Date(nearest.t).toISOString()), false]]));
+  });
+  svgEl.addEventListener("pointerleave", hideTT);
+}
+function renderKpis() {
+  const deps = visible(), sailed = deps.filter(d => d.sailed);
+  const soldout = sailed.filter(d => d.soldout_cars).length;
+  const occs = sailed.map(occupancy).filter(v => v !== null);
+  const everSold = sailed.filter(d => d.ever_soldout_cars).length;
+  const rows = [
+    ["Sejlede afgange målt", String(sailed.length)],
+    ["Udsolgt bildæk ved afgang", sailed.length ? pct(soldout / sailed.length) + ` (${soldout} afgange)` : "–"],
+    ["Gns. bilbelægning ved afgang", occs.length ? pct(occs.reduce((a,b) => a+b) / occs.length) : "–"],
+    ["Afgange der på et tidspunkt var fulde", sailed.length ? String(everSold) : "–"],
+    ["Kommende afgange helt fulde nu", String(deps.filter(d => !d.sailed && d.soldout_cars).length)],
+  ];
+  const dl = document.createElement("div");
+  for (const [k, v] of rows) {
+    const r = document.createElement("div");
+    r.style.cssText = "display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--grid)";
+    const kk = document.createElement("span"); kk.style.color = "var(--text-secondary)"; kk.textContent = k;
+    const vv = document.createElement("span"); vv.style.fontWeight = "600"; vv.style.fontVariantNumeric = "tabular-nums"; vv.textContent = v;
+    r.append(kk, vv); dl.append(r);
+  }
+  dl.lastChild && (dl.lastChild.style.borderBottom = "none");
+  $("#kpis").replaceChildren(dl);
+}
+function renderTable() {
+  const tbl = $("#depTable");
+  const rows = [...visible()].sort((a, b) => b.depart.localeCompare(a.depart)).slice(0, 150);
+  const thead = document.createElement("thead"); const hr = document.createElement("tr");
+  for (const h of ["Afgang", "Overfart", "Færge", "Ledige biler", "Belægning (est.)", "Ledige pax", "Status", "Sidste måling"]) {
+    const th = document.createElement("th"); th.textContent = h; hr.append(th);
+  }
+  thead.append(hr);
+  const tbody = document.createElement("tbody");
+  for (const d of rows) {
+    const tr = document.createElement("tr");
+    const o = occupancy(d);
+    const cells = [fmtDT(d.depart), d.crossing, d.ferry, String(d.final_avail_cars),
+      o === null ? "–" : pct(o), d.final_avail_pax + " / " + d.max_pax,
+      d.soldout_cars ? "FULD" : (d.sailed ? "sejlet" : "kommende"), fmtDT(d.final_obs_utc)];
+    cells.forEach((c, i) => {
+      const td = document.createElement("td"); td.textContent = c;
+      if (i === 6 && d.soldout_cars) td.className = "full";
+      tr.append(td);
+    });
+    tbody.append(tr);
+  }
+  tbl.replaceChildren(thead, tbody);
+}
+function renderSeg() {
+  const seg = $("#islandSeg");
+  const opts = [["all", "ALLE ØER"], ...ISLANDS.map(i => [String(i.id), i.name])];
+  seg.replaceChildren(...opts.map(([v, t]) => {
+    const b = document.createElement("button");
+    b.textContent = t; b.setAttribute("aria-pressed", String(selIsland === v));
+    b.onclick = () => { selIsland = v; render(); };
+    return b;
+  }));
+}
+function render() {
+  renderSeg(); renderTickers(); renderForward(); renderHistory();
+  renderAlerts(); renderHeat(); renderCurvePanel(); renderKpis(); renderTable();
+}
+fetch("data.json").then(r => r.json()).then(d => {
+  DATA = d;
+  $("#meta").textContent = `Opdateret ${fmtDT(d.generated_utc)} · ${d.n_observations.toLocaleString("da-DK")} målinger · opdateres hver 2. time`;
+  render();
+  $("#rangeFilter").onchange = render;
+  addEventListener("resize", () => { clearTimeout(render._t); render._t = setTimeout(render, 200); });
+}).catch(() => { $("#meta").textContent = "Kunne ikke indlæse data.json"; });
+</script>
+</body>
+</html>
