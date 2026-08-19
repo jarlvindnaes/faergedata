@@ -58,6 +58,9 @@ def main():
     for obs in by_dep.values():
         obs.sort(key=lambda r: r["snapshot_dt"])
 
+    # globalt sorteret liste af snapshots (til aflysningsdetektion)
+    all_snaps = sorted({r["snapshot_dt"] for r in rows})
+
     # bilkapacitet pr. rute: override eller max observerede ledige pladser
     cap = dict(CAR_CAPACITY_OVERRIDE)
     seen_max = defaultdict(int)
@@ -77,6 +80,19 @@ def main():
         final = pre[-1] if pre else last
         ferry_cap = cap.get(int(last["ferry_route_id"]), 0) or 0
         soldout_obs = next((o for o in obs if o["available_cars"] == 0), None)
+
+        # AFLYSNINGS-RADAR: afgangen er forsvundet fra bookingsystemet FØR sin
+        # afgangstid, selvom vi har senere snapshots der dækkede datoen.
+        # (Sejlede afgange forsvinder først EFTER afgang — det er normalt.)
+        last_seen = obs[-1]["snapshot_dt"]
+        margin = timedelta(minutes=30)
+        later_snaps = [s for s in all_snaps
+                       if last_seen < s < depart_utc - margin
+                       and (last["depart_dt"].date() - s.astimezone(TZ).date()).days <= 14]
+        cancelled = len(later_snaps) > 0
+        detected = later_snaps[0] if cancelled else None
+        notice_h = round((depart_utc - detected).total_seconds() / 3600, 1) if detected else None
+
         departures.append({
             "id": dep_id,
             "route_id": int(last["ferry_route_id"]),
@@ -97,11 +113,16 @@ def main():
             ),
             "n_obs": len(obs),
             "final_obs_utc": final["snapshot_utc"],
+            "cancelled": cancelled,
+            "cancel_detected_utc": detected.strftime("%Y-%m-%dT%H:%M:%SZ") if detected else None,
+            "cancel_notice_hours": notice_h,
         })
-        curves[dep_id] = [
-            {"t": o["snapshot_utc"], "cars": o["available_cars"], "pax": o["available_pax"]}
-            for o in obs
-        ]
+        # individuelle kurver beholdes for de seneste 30 dage + kommende afgange
+        if depart_utc >= now - timedelta(days=30):
+            curves[dep_id] = [
+                {"t": o["snapshot_utc"], "cars": o["available_cars"], "pax": o["available_pax"]}
+                for o in obs
+            ]
 
     departures.sort(key=lambda d: d["depart"])
 
@@ -120,6 +141,25 @@ def main():
         {"date": k[0], "crossing": k[1], **v} for k, v in sorted(daily.items())
     ]
 
+    # AGGREGERET BOOKINGKURVE pr. rute: gennemsnitligt antal ledige bilpladser
+    # som funktion af timer-til-afgang (bucket = 6 timer, op til 14 døgn).
+    # Beregnes over ALLE observationer nogensinde — kurven skærpes med tiden.
+    agg = defaultdict(lambda: defaultdict(list))
+    for r in rows:
+        rid = int(r["ferry_route_id"])
+        h = (r["depart_dt"].astimezone(timezone.utc) - r["snapshot_dt"]).total_seconds() / 3600
+        if h < 0 or h > 336:
+            continue
+        bucket = int(h // 6) * 6
+        agg[rid][bucket].append(r["available_cars"])
+    agg_curves = {
+        str(rid): [
+            {"h": b, "avg": round(sum(v) / len(v), 2), "n": len(v)}
+            for b, v in sorted(buckets.items())
+        ]
+        for rid, buckets in agg.items()
+    }
+
     out = {
         "generated_utc": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "n_observations": len(rows),
@@ -130,6 +170,7 @@ def main():
         "departures": departures,
         "daily": daily_list,
         "curves": curves,
+        "agg_curves": agg_curves,
     }
     out_path = ROOT / "docs" / "data.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
