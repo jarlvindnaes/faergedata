@@ -25,6 +25,73 @@ CAR_CAPACITY_OVERRIDE = {
 }
 ROUTE_NAMES = {411: "Kragenæs–Femø", 413: "Kragenæs–Askø", 414: "Kragenæs–Fejø"}
 
+CSV_FIELDS = [
+    "snapshot_utc", "service_date", "ferry_route_id", "crossing",
+    "departure_id", "depart", "arrival", "available_cars", "available_pax",
+    "max_pax", "ferry", "css_class", "is_dangerous_goods",
+]
+
+
+def reconcile_raw_into_csv():
+    """Selvhelbredende: de rå snapshot-filer er kilden til sandheden.
+
+    Hvis en rå snapshot-fil findes i data/raw/ men dens snapshot_utc mangler
+    i måneds-CSV'en (fx fordi en manuel upload har overskrevet CSV'en),
+    genskabes rækkerne fra den rå fil og appendes. Ingenting slettes.
+    """
+    csv_dir = ROOT / "data" / "csv"
+    csv_dir.mkdir(parents=True, exist_ok=True)
+
+    for month_dir in sorted((ROOT / "data" / "raw").glob("*")):
+        if not month_dir.is_dir():
+            continue
+        csv_path = csv_dir / f"observations-{month_dir.name}.csv"
+        have = set()
+        if csv_path.exists():
+            with csv_path.open(encoding="utf-8") as f:
+                have = {r["snapshot_utc"] for r in csv.DictReader(f)}
+
+        restored = []
+        for raw_path in sorted(month_dir.glob("snapshot-*.json")):
+            try:
+                bundle = json.loads(raw_path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError) as e:
+                print(f"reconcile: kunne ikke læse {raw_path.name}: {e}")
+                continue
+            snap = bundle.get("snapshot_utc")
+            if not snap or snap in have:
+                continue
+            for date_str, data in sorted(bundle.get("days", {}).items()):
+                for crossing in data or []:
+                    for dep in crossing.get("departures", []):
+                        restored.append({
+                            "snapshot_utc": snap,
+                            "service_date": date_str,
+                            "ferry_route_id": crossing.get("ferryRouteId"),
+                            "crossing": (crossing.get("crossingName") or "").strip(),
+                            "departure_id": dep.get("departureId"),
+                            "depart": dep.get("depart"),
+                            "arrival": dep.get("arrival"),
+                            "available_cars": dep.get("availableCars"),
+                            "available_pax": dep.get("availablePax"),
+                            "max_pax": dep.get("maxPax"),
+                            "ferry": (dep.get("note") or "").strip(),
+                            "css_class": dep.get("cssClass"),
+                            "is_dangerous_goods": dep.get("isDangerousGoods"),
+                        })
+            have.add(snap)
+            print(f"reconcile: genskabte snapshot {snap} fra {raw_path.name}")
+
+        if restored:
+            new_file = not csv_path.exists()
+            with csv_path.open("a", newline="", encoding="utf-8") as f:
+                w = csv.DictWriter(f, fieldnames=CSV_FIELDS)
+                if new_file:
+                    w.writeheader()
+                w.writerows(restored)
+            print(f"reconcile: {len(restored)} rækker appendet til {csv_path.name}")
+
+
 
 def parse_utc(s):
     return datetime.strptime(s, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
@@ -49,6 +116,7 @@ def load_rows():
 
 
 def main():
+    reconcile_raw_into_csv()
     rows = load_rows()
     now = datetime.now(timezone.utc)
 
