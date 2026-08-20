@@ -1,0 +1,44 @@
+name: AIS punktlighed
+
+on:
+  schedule:
+    - cron: "40 3 * * *"   # dagligt kl. 03:40 UTC — behandler gårsdagens AIS-fil
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "Dato (YYYY-MM-DD), tom = i går"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ais
+  cancel-in-progress: false
+
+jobs:
+  ais:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Hent AIS-spor (Søfartsstyrelsen)
+        run: python scraper/fetch_ais.py ${{ inputs.date }}
+
+      - name: Byg punktlighedsdata
+        run: python scraper/build_punctuality.py
+
+      - name: Commit og push
+        run: |
+          git config user.name "faergedata-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/ais docs/punctuality.json
+          git diff --cached --quiet && echo "Ingen ændringer" && exit 0
+          git commit -m "AIS $(date -u +%Y-%m-%dT%H:%MZ)"
+          git pull --rebase
+          git push
