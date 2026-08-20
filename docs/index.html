@@ -56,6 +56,11 @@
     border-bottom: 1px solid var(--border);
   }
   .topbar h1 { font-size: 20px; margin: 0; letter-spacing: 0.04em; }
+  .topbar .ver {
+    font-size: 11px; color: var(--text-muted); border: 1px solid var(--border);
+    border-radius: 999px; padding: 1px 8px; font-variant-numeric: tabular-nums;
+    align-self: center; flex-shrink: 0;
+  }
   .topbar .live { color: var(--text-muted); font-size: 12px; flex: 1; }
   #themeToggle {
     background: var(--surface-1); color: var(--text-secondary); border: 1px solid var(--border);
@@ -174,9 +179,29 @@
   .heat .rowlab { background: none; color: var(--text-muted); justify-content: flex-start; white-space: nowrap; overflow: hidden; }
   .heat .collab { background: none; color: var(--text-muted); }
   details.panel > summary { cursor: pointer; font-size: 14px; font-weight: 600; letter-spacing: 0.02em; }
+  .guide { margin-top: 14px; }
+  .guide-body { font-size: 13px; color: var(--text-secondary); max-width: 88ch; }
+  .guide-body p { margin: 10px 0 6px; }
+  .guide-body dl { margin: 8px 0 0; }
+  .guide-body dt { font-weight: 650; color: var(--text-primary); margin-top: 10px; font-size: 12.5px; letter-spacing: 0.02em; }
+  .guide-body dd { margin: 2px 0 0; }
+  .guide-note { color: var(--text-muted); font-size: 12px; border-top: 1px solid var(--grid); padding-top: 10px; margin-top: 14px; }
   details.panel > summary .desc { display: inline; font-weight: 400; color: var(--text-muted); font-size: 12px; margin-left: 8px; }
   footer { color: var(--text-muted); font-size: 12px; margin-top: 20px; max-width: 80ch; }
   a { color: var(--femo); }
+  @media (max-width: 560px) {
+    .wrap { padding: 12px 10px 48px; }
+    .topbar h1 { font-size: 16px; }
+    .topbar { gap: 8px; }
+    .topbar .live { flex-basis: 100%; order: 3; }
+    .subtitle { font-size: 13px; }
+    .island-card { padding: 12px; gap: 10px; }
+    .island-card .big { font-size: 26px; }
+    .island-card .shape svg { width: 52px; height: auto; }
+    .panel { padding: 12px 12px; border-radius: 12px; }
+    .dep-row .tm { min-width: 76px; }
+    th, td { padding: 5px 6px; font-size: 12px; }
+  }
   @media (prefers-reduced-motion: reduce) {
     .island-card, .panel, .chip { transition: none; }
     .island-card:hover { transform: none; }
@@ -187,6 +212,7 @@
 <div class="wrap">
   <div class="topbar">
     <h1>FÆRGEDATA · SMÅLANDSFARVANDET</h1>
+    <span class="ver" title="Dashboardversion">v4.1</span>
     <span class="live" id="meta">Indlæser …</span>
     <button id="themeToggle" aria-label="Skift mellem lyst og mørkt tema">◐ Tema</button>
   </div>
@@ -203,6 +229,37 @@
       <option value="all">Hele perioden</option>
     </select>
   </div>
+
+  <details class="panel guide">
+    <summary>HVAD KIGGER VI EFTER? <span class="desc">— guide til terminalen, klik for at folde ud</span></summary>
+    <div class="guide-body">
+      <p>Kommunen begrunder besparelser med "for lidt trafik" — men gennemsnitstal skjuler det pres,
+      øboerne mærker. Terminalen er bygget til at fange de signaler, som kommunens egne tal ikke viser:</p>
+      <dl>
+        <dt>FORWARD-KURVE · bookinghastighed frem i tid</dt>
+        <dd>Hvor stor en andel af bilpladserne er allerede booket de næste 14 dage? Stiger kurven tidligt,
+        er der strukturel efterspørgsel — folk bestiller længe før afgang, fordi de ved, at pladserne forsvinder.</dd>
+        <dt>ORDREDYBDE · hvor tidligt forsvinder pladserne?</dt>
+        <dd>Gennemsnitskurven viser, hvor mange dage før afgang bildækket typisk tømmes. Jo tidligere kurven
+        dykker, jo længere i forvejen skal en øbo planlægge — det er et mål for reelt bookingpres.</dd>
+        <dt>UDSOLGT-VARSEL &amp; AFVIST EFTERSPØRGSEL · den usynlige kø</dt>
+        <dd>Når en afgang er fuld, stopper bookingerne — efterspørgslen derover kan ikke ses i kommunens
+        statistik. Timer med udsolgt bildæk er derfor et minimumsmål for afviste biler.</dd>
+        <dt>FINGERAFTRYK · ugedag × tidspunkt</dt>
+        <dd>Hvis kommunen foreslår at skære en bestemt afgang, viser fingeraftrykket med det samme, hvor
+        belastet netop dét tidspunkt er. Vores forsvar mod "den afgang bruger ingen".</dd>
+        <dt>AFLYSNINGS-RADAR · korte varsler</dt>
+        <dd>Fanger afgange, der fjernes fra bookingsystemet før afgangstid, og måler varslet. Under 24 timer
+        markeres rødt. Hver detektion er dokumenteret med to tidsstemplede rå målinger i git-historikken.</dd>
+        <dt>VOGNDÆK vs. passagerer · flaskehalsen</dt>
+        <dd>Passagerkapaciteten (98) er stort set aldrig bindende — det er bildækket, der lukker afgange.
+        Et foto af et halvtomt passagerdæk siger derfor intet om, hvor mange biler der blev afvist.</dd>
+      </dl>
+      <p class="guide-note">Redelighed: kapaciteten pr. rute er estimeret som største observerede antal ledige
+      pladser — en nedre grænse, så alle belægningsprocenter er konservative. Varsler og udsolgt-timer tælles
+      kun på sejlede afgange; kommende vises som foreløbige. Alt kan efterprøves i git-historikken.</p>
+    </div>
+  </details>
 
   <div class="sectionlab">LIGE NU</div>
   <div class="grid2 w21">
