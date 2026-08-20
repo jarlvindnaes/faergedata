@@ -19,6 +19,8 @@
     --critical: #d03b3b; --warning: #fab219; --good-text: #006300;
     --seq-100:#cde2fb; --seq-200:#9ec5f4; --seq-300:#6da7ec; --seq-400:#3987e5;
     --seq-500:#256abf; --seq-600:#184f95;
+    --heat-0:#ffffff; --heat-1:#fcd9cc; --heat-2:#f5ad92; --heat-3:#e97f56;
+    --heat-4:#cc4d28; --heat-5:#a12f14; --heat-full:#7a1e0a;
   }
   @media (prefers-color-scheme: dark) {
     :root:where(:not([data-theme="light"])) .viz-root {
@@ -235,7 +237,7 @@
 <div class="wrap">
   <div class="topbar">
     <h1>FÆRGEDATA · SMÅLANDSFARVANDET</h1>
-    <span class="ver" title="Dashboardversion">v4.3</span>
+    <span class="ver" title="Dashboardversion">v4.4</span>
     <span class="live" id="meta">Indlæser …</span>
     <span class="live nextscrape" id="nextScrape" style="flex:0 0 auto"></span>
     <button id="themeToggle" aria-label="Skift mellem lyst og mørkt tema">◐ Tema</button>
@@ -325,7 +327,8 @@
   </div>
   <div class="panel">
     <h2>PRES-MATRIX · ledige bilpladser pr. afgang, 14 dage frem</h2>
-    <p class="desc">Mørkere = mere booket. Rød = fuld. Med "Alle øer" vises dagens mest pressede afgang pr. overfart — vælg en ø for at folde alle afgangstider ud.</p>
+    <p class="desc">Hvid = alle bilpladser ledige · jo mørkere rød, jo mere booket · <b>Fuld</b> = udsolgt.
+    Med "Alle øer" vises dagens mest pressede afgang pr. overfart — vælg en ø for at folde alle afgangstider ud.</p>
     <div id="heatWrap"></div>
   </div>
 
@@ -853,7 +856,7 @@ function renderHeat() {
   const mkCell = (t, cls) => { const c = document.createElement("div"); c.className = "cell " + cls; c.textContent = t; return c; };
   grid.append(mkCell("", "rowlab"));
   for (const d of days) grid.append(mkCell(fmtDate(d), "collab"));
-  const seq = ["--seq-100","--seq-200","--seq-300","--seq-400","--seq-500","--seq-600"].map(cssVar);
+  const seq = ["--heat-0","--heat-1","--heat-2","--heat-3","--heat-4","--heat-5"].map(cssVar);
   for (const rk of rowKeys) {
     const [time, crossing] = compact ? ["", rk] : rk.split("|");
     grid.append(mkCell((time ? time + " " : "") + crossing.replace("Kragenæs", "Kr.").replace(" > ", "→"), "rowlab"));
@@ -862,12 +865,15 @@ function renderHeat() {
       if (!d) { grid.append(mkCell("", "")); continue; }
       const c = document.createElement("div"); c.className = "cell"; c.tabIndex = 0;
       const free = d.final_avail_cars, capa = d.car_capacity_est || 0;
-      if (free === 0) { c.style.background = cssVar("--critical"); c.style.color = "#fff"; c.textContent = "Fuld"; }
-      else {
+      if (free === 0) {
+        c.style.background = cssVar("--heat-full"); c.style.color = "#fff";
+        c.style.fontWeight = "700"; c.textContent = "Fuld";
+      } else {
         const f = capa ? Math.max(0, Math.min(1, (capa - free) / capa)) : 0;
         const si = Math.min(seq.length - 1, Math.floor(f * seq.length));
         c.style.background = seq[si];
-        c.style.color = si >= 3 ? "#fff" : "#101d33"; /* ink følger cellens lysstyrke, ikke temaet */
+        c.style.color = si >= 3 ? "#fff" : "#2b120a"; /* ink følger cellens lysstyrke, ikke temaet */
+        if (si <= 1) c.style.boxShadow = "inset 0 0 0 1px " + cssVar("--grid");
         c.textContent = free;
       }
       const show = evt => showTT(evt, ttNode([
