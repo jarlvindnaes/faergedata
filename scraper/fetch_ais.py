@@ -39,12 +39,12 @@ def download(day: str, tmp) -> bool:
     # web.ais.dk kører periodevis med udløbet certifikat; arkivet er offentligt.
     ctx = ssl._create_unverified_context()
     headers = {"User-Agent": "faergedata-monitor/1.0 (AIS-punktlighed for oefaergerne; se GitHub-repo)"}
-    for attempt in range(3):
+    for attempt in range(2):
         for base in URLS:
             url = base.format(d=day)
             try:
                 req = urllib.request.Request(url, headers=headers)
-                with urllib.request.urlopen(req, timeout=120, context=ctx) as r:
+                with urllib.request.urlopen(req, timeout=45, context=ctx) as r:
                     tmp.seek(0); tmp.truncate()
                     while True:
                         chunk = r.read(1 << 20)
@@ -57,7 +57,7 @@ def download(day: str, tmp) -> bool:
                     return True
             except Exception as e:
                 print(f"  {url}: {type(e).__name__}: {e}", flush=True)
-        time.sleep(20 * (attempt + 1))
+        time.sleep(10)
     return False
 
 
@@ -125,7 +125,14 @@ def main() -> None:
     if not days:
         print("Ingen manglende AIS-dage.")
         return
-    got = sum(1 for d in days if process_day(d))
+    got = 0
+    for d in days:
+        if process_day(d):
+            got += 1
+        else:
+            # arkivet er nede — ingen grund til at prøve flere dage i denne kørsel
+            print("Arkivet ser ud til at være nede; resten forsøges næste nat.")
+            break
     print(f"{got} af {len(days)} dage hentet.")
 
 
