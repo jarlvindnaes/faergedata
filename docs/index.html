@@ -157,20 +157,20 @@
   .ferry-card .nm { font-weight: 700; font-size: 13px; letter-spacing: 0.03em; }
   .ferry-card .sub { color: var(--text-muted); font-size: 12px; margin-bottom: 8px; }
   .ferry-shape { display: block; }
-  .ferry-shape .hull-grp { transform-origin: 60px 22px; }
+  .ferry-shape .ferry-pos { transition: transform 3s ease-in-out; }
+  .ferry-shape .hull-grp { transform-origin: 0px 26px; }
   .ferry-shape.sailing .hull-grp { animation: ferry-rock 3.2s ease-in-out infinite; }
   .ferry-shape.docked .hull-grp { animation: ferry-bob 5.5s ease-in-out infinite; }
   .ferry-shape .waves { animation: none; }
   .ferry-shape.sailing .waves { animation: wave-drift 2.2s linear infinite; }
-  .ferry-shape.flip .hull-grp { transform: scaleX(-1); transform-origin: 60px 17px; }
-  .ferry-shape.flip.sailing .hull-grp { animation: ferry-rock-flip 3.2s ease-in-out infinite; }
+  .ferry-shape.flip .hull-grp { animation: ferry-rock-flip 3.2s ease-in-out infinite; }
   @keyframes ferry-rock {
-    0%,100% { transform: rotate(-1.3deg) translateY(0.4px); }
-    50% { transform: rotate(1.3deg) translateY(-0.8px); }
+    0%,100% { transform: rotate(-1.6deg) translateY(0.4px); }
+    50% { transform: rotate(1.6deg) translateY(-0.8px); }
   }
   @keyframes ferry-rock-flip {
-    0%,100% { transform: scaleX(-1) rotate(-1.3deg) translateY(0.4px); }
-    50% { transform: scaleX(-1) rotate(1.3deg) translateY(-0.8px); }
+    0%,100% { transform: scaleX(-1) rotate(-1.6deg) translateY(0.4px); }
+    50% { transform: scaleX(-1) rotate(1.6deg) translateY(-0.8px); }
   }
   @keyframes ferry-bob {
     0%,100% { transform: translateY(0); }
@@ -276,7 +276,7 @@
 <div class="wrap">
   <div class="topbar">
     <h1>FÆRGEDATA · SMÅLANDSFARVANDET</h1>
-    <span class="ver" title="Dashboardversion">v4.6</span>
+    <span class="ver" title="Dashboardversion">v4.7</span>
     <span class="live" id="meta">Indlæser …</span>
     <span class="live nextscrape" id="nextScrape" style="flex:0 0 auto"></span>
     <button id="themeToggle" aria-label="Skift mellem lyst og mørkt tema">◐ Tema</button>
@@ -762,7 +762,16 @@ function tickCountdowns() {
   if (ns) ns.textContent = `næste måling om ca. ${fmtCountdown(nextScrapeUtc() - now)}`;
 }
 setInterval(tickCountdowns, 1000);
-/* færge-status (i havn/undervejs) genberegnes hvert 30. sekund */
+/* færgeposition glider hvert 5. sekund; fuld genopbygning hvert 30. sekund */
+setInterval(() => {
+  if (!DATA) return;
+  document.querySelectorAll("#ferries .ferry-card").forEach(card => {
+    const islId = Number(card.dataset.isl || 0); if (!islId) return;
+    const st = ferryState(islId);
+    const pos = card.querySelector(".ferry-pos");
+    if (pos) pos.style.transform = `translateX(${ferryX(st).toFixed(1)}px)`;
+  });
+}, 5000);
 setInterval(() => { if (DATA) renderFerries(); }, 30000);
 
 /* ---------- vogndæk ---------- */
@@ -770,6 +779,7 @@ function renderFerries() {
   const wrap = $("#ferries");
   wrap.replaceChildren(...activeIslands().map(isl => {
     const card = document.createElement("div"); card.className = "ferry-card";
+    card.dataset.isl = isl.id;
     card.style.setProperty("--ic", iColor(isl));
     const next = byIsland(isl.id).filter(d => !d.sailed && new Date(d.depart) > Date.now())
       .sort((a, b) => a.depart.localeCompare(b.depart))[0];
@@ -783,7 +793,7 @@ function renderFerries() {
       : "I HAVN";
     const sub = document.createElement("div"); sub.className = "sub";
     sub.textContent = next ? `Næste afgang: ${fmtDT(next.depart)} · ${next.crossing}` : "Ingen kommende afgange";
-    card.append(ferryPictogram(iColor(isl), st.state, st.state === "sailing" && !st.outbound), chip, nm, sub);
+    card.append(ferryPictogram(iColor(isl), st, isl.name), chip, nm, sub);
     if (next) {
       const cd = document.createElement("div"); cd.className = "cd";
       const lab = document.createElement("span"); lab.className = "cd-label"; lab.textContent = "AFGANG OM";
@@ -808,33 +818,55 @@ function renderFerries() {
     return card;
   }));
 }
-function ferryPictogram(color, state, flip) {
+const FERRY_TRAVEL = { x0: 34, x1: 176 };  /* færgens centrum, yderpunkter */
+function ferryX(st) {
+  const pr = Math.max(0, Math.min(1, st.progress ?? 0));
+  return FERRY_TRAVEL.x0 + (FERRY_TRAVEL.x1 - FERRY_TRAVEL.x0) * pr;
+}
+function ferryPictogram(color, st, islandName) {
   const span = document.createElement("span");
-  span.innerHTML = `<svg width="120" height="34" viewBox="0 0 120 34" aria-hidden="true"
-      class="ferry-shape ${state || "docked"}${flip ? " flip" : ""}" style="margin-bottom:4px">
-    <g class="hull-grp">
-      <path d="M6,22 L114,22 L106,31 L12,31 Z" fill="${color}"/>
-      <rect x="30" y="12" width="56" height="9" rx="2" fill="${color}" opacity="0.55"/>
-      <rect x="48" y="4" width="20" height="7" rx="2" fill="${color}" opacity="0.8"/>
-      <line x1="86" y1="21" x2="86" y2="8" stroke="${color}" stroke-width="2"/>
-    </g>
+  const axis = cssVar("--axis"), muted = cssVar("--text-muted");
+  const flip = st.state === "sailing" && !st.outbound;
+  const quay = x => `
+    <rect x="${x}" y="20" width="16" height="3" rx="1" fill="${axis}"/>
+    <rect x="${x + 1.5}" y="23" width="2.5" height="8" fill="${axis}"/>
+    <rect x="${x + 12}" y="23" width="2.5" height="8" fill="${axis}"/>`;
+  span.innerHTML = `<svg width="210" height="46" viewBox="0 0 210 46" aria-hidden="true"
+      class="ferry-shape ${st.state}${flip ? " flip" : ""}" style="margin-bottom:4px;max-width:100%">
+    ${quay(2)} ${quay(192)}
+    <text x="2" y="9" font-size="7.5" fill="${muted}" letter-spacing="0.08em">KRAGENÆS</text>
+    <text x="208" y="9" text-anchor="end" font-size="7.5" fill="${muted}" letter-spacing="0.08em">${islandName}</text>
     <g class="waves">
-      <path d="M-24,25 q6,4 12,0 t12,0 t12,0 t12,0 t12,0 t12,0 t12,0 t12,0 t12,0 t12,0 t12,0 t12,0" fill="none" stroke="${cssVar("--axis")}" stroke-width="1.5" opacity="0.7"/>
+      <path d="M-24,32 q6,3.5 12,0 t12,0 t12,0 t12,0 t12,0 t12,0 t12,0 t12,0 t12,0 t12,0 t12,0 t12,0 t12,0 t12,0 t12,0 t12,0 t12,0 t12,0 t12,0 t12,0" fill="none" stroke="${axis}" stroke-width="1.3" opacity="0.6"/>
+    </g>
+    <g class="ferry-pos" style="transform: translateX(${ferryX(st).toFixed(1)}px)">
+      <g class="hull-grp">
+        <path d="M-15,26 L15,26 L11,33 L-11,33 Z" fill="${color}"/>
+        <rect x="-9.5" y="19" width="19" height="6" rx="1.5" fill="${color}" opacity="0.55"/>
+        <rect x="-4" y="13.5" width="8" height="5" rx="1.5" fill="${color}" opacity="0.8"/>
+        <line x1="7" y1="25" x2="7" y2="16" stroke="${color}" stroke-width="1.6"/>
+      </g>
     </g>
   </svg>`;
   return span;
 }
 function ferryState(islId) {
-  /* underway hvis nu er mellem depart og arrival på seneste afgang */
+  /* underway hvis nu er mellem depart og arrival på seneste afgang;
+     ellers i havn ved seneste destination. progress = andel af overfarten. */
   const now = Date.now();
   const deps = byIsland(islId).filter(d => new Date(d.depart) <= now)
     .sort((a, b) => b.depart.localeCompare(a.depart));
   const cur = deps[0];
-  if (cur && cur.arrival && now < new Date(cur.arrival).getTime()) {
-    return { state: "sailing", crossing: cur.crossing, arrival: cur.arrival,
-             outbound: cur.crossing.trim().startsWith("Kragenæs") };
+  if (cur && cur.arrival) {
+    const t0 = new Date(cur.depart).getTime(), t1 = new Date(cur.arrival).getTime();
+    const outbound = cur.crossing.trim().startsWith("Kragenæs");
+    if (now < t1 && t1 > t0) {
+      return { state: "sailing", crossing: cur.crossing, arrival: cur.arrival,
+               outbound, progress: (now - t0) / (t1 - t0) };
+    }
+    return { state: "docked", atIsland: outbound, progress: outbound ? 1 : 0 };
   }
-  return { state: "docked" };
+  return { state: "docked", atIsland: false, progress: 0 };
 }
 
 /* ---------- generisk linjechart ---------- */
