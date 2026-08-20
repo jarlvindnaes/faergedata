@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Færgedata Terminal – Femø · Askø · Fejø</title>
+<meta name="description" content="Uafhængig monitorering af belægning, bookingpres og aflysninger på færgerne Kragenæs–Femø, –Askø og –Fejø. Opdateres hver 2. time.">
+<meta property="og:title" content="Færgedata Terminal – Femø · Askø · Fejø">
+<meta property="og:description" content="Belægning, bookingpres og aflysninger på Lolland Kommunes øfærger — dokumenteret hver 2. time fra kommunens eget bookingsystem.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>⛴</text></svg>">
 <style>
   .viz-root {
@@ -44,7 +47,14 @@
     font-size: 14px; line-height: 1.45;
   }
   .wrap { max-width: 1160px; margin: 0 auto; padding: 20px 16px 64px; }
-  .topbar { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+  .topbar {
+    display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+    position: sticky; top: 0; z-index: 5;
+    background: color-mix(in srgb, var(--page) 86%, transparent);
+    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+    padding: 12px 0 10px; margin-bottom: 2px;
+    border-bottom: 1px solid var(--border);
+  }
   .topbar h1 { font-size: 20px; margin: 0; letter-spacing: 0.04em; }
   .topbar .live { color: var(--text-muted); font-size: 12px; flex: 1; }
   #themeToggle {
@@ -52,22 +62,29 @@
     border-radius: 8px; padding: 5px 12px; font: inherit; font-size: 12px; cursor: pointer;
   }
   .subtitle { color: var(--text-secondary); margin: 6px 0 16px; max-width: 78ch; }
-  .sectionlab { color: var(--text-muted); font-size: 11px; letter-spacing: 0.14em; margin: 22px 0 8px; }
+  .sectionlab {
+    color: var(--text-muted); font-size: 11px; letter-spacing: 0.16em; margin: 26px 0 10px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .sectionlab::after { content: ""; flex: 1; height: 1px; background: var(--grid); }
 
   /* Ø-kort med kystlinje */
   .islands { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
   .island-card {
-    background: var(--surface-1); border: 1px solid var(--border); border-radius: 14px;
-    padding: 14px; cursor: pointer; text-align: left; font: inherit; color: inherit;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 16px;
+    padding: 14px 16px; cursor: pointer; text-align: left; font: inherit; color: inherit;
     display: flex; gap: 14px; align-items: center;
+    transition: border-color .15s ease, transform .15s ease, box-shadow .15s ease;
   }
+  .island-card:hover { border-color: var(--ic); transform: translateY(-1px); box-shadow: 0 4px 14px rgba(0,0,0,.08); }
+  .island-card:focus-visible { outline: 2px solid var(--ic); outline-offset: 2px; }
   .island-card[aria-pressed="true"] { outline: 2px solid var(--ic); outline-offset: -2px; background: var(--icw); }
   .island-card .shape { flex-shrink: 0; }
   .island-card .shape path { fill: var(--icw); stroke: var(--ic); stroke-width: 2.5; stroke-linejoin: round; }
   .island-card .body { min-width: 0; flex: 1; }
   .island-card .nm { font-weight: 700; letter-spacing: 0.06em; font-size: 14px; }
   .island-card .nm .route { color: var(--text-muted); font-weight: 400; letter-spacing: 0; font-size: 12px; margin-left: 6px; }
-  .island-card .big { font-size: 26px; font-weight: 600; margin: 2px 0; }
+  .island-card .big { font-size: 30px; font-weight: 650; margin: 2px 0; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
   .island-card .big .unit { font-size: 13px; color: var(--text-secondary); font-weight: 400; }
   .island-card .stats { color: var(--text-muted); font-size: 12px; }
   .island-card .alert { color: var(--critical); font-weight: 600; }
@@ -78,7 +95,11 @@
     background: var(--surface-1); color: var(--text-primary);
     border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; font: inherit; font-size: 13px;
   }
-  .chip { cursor: pointer; color: var(--text-secondary); }
+  .chip { cursor: pointer; color: var(--text-secondary); transition: border-color .12s ease, color .12s ease; }
+  .chip:hover, .filters select:hover, #themeToggle:hover { border-color: var(--axis); }
+  .chip:focus-visible, .filters select:focus-visible, #themeToggle:focus-visible, select:focus-visible {
+    outline: 2px solid var(--femo); outline-offset: 2px;
+  }
   .chip[aria-pressed="true"] { color: var(--text-primary); font-weight: 600; border-color: var(--axis); }
 
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
@@ -86,8 +107,11 @@
   @media (max-width: 880px) { .grid2, .grid2.w21 { grid-template-columns: 1fr; } }
   .panel {
     background: var(--surface-1); border: 1px solid var(--border);
-    border-radius: 12px; padding: 14px 16px; margin-bottom: 14px; min-width: 0;
+    border-radius: 14px; padding: 16px 18px; margin-bottom: 14px; min-width: 0;
+    box-shadow: 0 1px 2px rgba(0,0,0,.04);
+    transition: border-color .15s ease;
   }
+  .panel:hover { border-color: var(--axis); }
   .panel h2 { font-size: 14px; margin: 0 0 2px; letter-spacing: 0.02em; }
   .panel .desc { color: var(--text-muted); font-size: 12px; margin: 0 0 10px; }
   .legend { display: flex; gap: 14px; font-size: 12px; color: var(--text-secondary); margin-top: 8px; flex-wrap: wrap; }
@@ -139,7 +163,12 @@
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th { text-align: left; color: var(--text-secondary); font-weight: 500; border-bottom: 1px solid var(--grid); padding: 6px 8px; white-space: nowrap; }
   td { border-bottom: 1px solid var(--grid); padding: 6px 8px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tbody tr:hover td { background: color-mix(in srgb, var(--text-primary) 4%, transparent); }
   td.full { color: var(--critical); font-weight: 600; }
+  .heatscroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .heatscroll::-webkit-scrollbar { height: 8px; }
+  .heatscroll::-webkit-scrollbar-thumb { background: var(--axis); border-radius: 4px; }
+  #heatWrap .heat { min-width: 760px; }
   .heat { display: grid; gap: 2px; }
   .heat .cell { border-radius: 3px; min-height: 24px; display: flex; align-items: center; justify-content: center; font-size: 11px; }
   .heat .rowlab { background: none; color: var(--text-muted); justify-content: flex-start; white-space: nowrap; overflow: hidden; }
@@ -148,6 +177,10 @@
   details.panel > summary .desc { display: inline; font-weight: 400; color: var(--text-muted); font-size: 12px; margin-left: 8px; }
   footer { color: var(--text-muted); font-size: 12px; margin-top: 20px; max-width: 80ch; }
   a { color: var(--femo); }
+  @media (prefers-reduced-motion: reduce) {
+    .island-card, .panel, .chip { transition: none; }
+    .island-card:hover { transform: none; }
+  }
 </style>
 </head>
 <body class="viz-root">
@@ -671,8 +704,9 @@ function renderHeat() {
       if (free === 0) { c.style.background = cssVar("--critical"); c.style.color = "#fff"; c.textContent = "Fuld"; }
       else {
         const f = capa ? Math.max(0, Math.min(1, (capa - free) / capa)) : 0;
-        c.style.background = seq[Math.min(seq.length - 1, Math.floor(f * seq.length))];
-        c.style.color = f > 0.55 ? "#fff" : cssVar("--text-primary");
+        const si = Math.min(seq.length - 1, Math.floor(f * seq.length));
+        c.style.background = seq[si];
+        c.style.color = si >= 3 ? "#fff" : "#101d33"; /* ink følger cellens lysstyrke, ikke temaet */
         c.textContent = free;
       }
       const show = evt => showTT(evt, ttNode([
@@ -687,7 +721,10 @@ function renderHeat() {
       grid.append(c);
     }
   }
-  el.replaceChildren(grid);
+  const scroller = document.createElement("div");
+  scroller.className = "heatscroll";
+  scroller.append(grid);
+  el.replaceChildren(scroller);
 }
 /* Udsolgt-varsel: prik-strip pr. ø */
 function renderLead() {
@@ -815,8 +852,9 @@ function renderFingerprint() {
       const c = document.createElement("div"); c.className = "cell"; c.tabIndex = 0;
       if (!arr.length) { grid.append(c); return; }
       const avg = arr.reduce((x, y) => x + y) / arr.length;
-      c.style.background = seq[Math.min(seq.length - 1, Math.floor(avg * seq.length))];
-      c.style.color = avg > 0.55 ? "#fff" : cssVar("--text-primary");
+      const si = Math.min(seq.length - 1, Math.floor(avg * seq.length));
+      c.style.background = seq[si];
+      c.style.color = si >= 3 ? "#fff" : "#101d33"; /* ink følger cellens lysstyrke, ikke temaet */
       c.textContent = Math.round(avg * 100);
       const show = evt => showTT(evt, ttNode([
         [null, "", `${w} kl. ${a}–${b}`, true],
@@ -864,8 +902,17 @@ function renderCurve(depId) {
            `<text x="${mL-6}" y="${Y(g)+4}" text-anchor="end" font-size="11" fill="${cssVar("--text-muted")}">${g}</text>`;
   svg += `<line x1="${X(departT)}" x2="${X(departT)}" y1="${mT}" y2="${Y(0)}" stroke="${cssVar("--axis")}"/>` +
          `<text x="${Math.min(X(departT), W - mR)}" y="${mT+10}" text-anchor="middle" font-size="11" fill="${cssVar("--text-muted")}">afgang</text>`;
+  const fmtTick = t => new Date(t).toLocaleString("da-DK", { day: "numeric", month: "short", hour: "2-digit" });
+  for (let i = 0; i <= 3; i++) {
+    const tt = t0 + (t1 - t0) * i / 3;
+    if (Math.abs(X(tt) - X(departT)) < 34) continue; /* undgå kollision med afgangsmarkøren */
+    svg += `<text x="${X(tt)}" y="${H-mB+16}" text-anchor="${i===0?"start":i===3?"end":"middle"}" font-size="11" fill="${cssVar("--text-muted")}">${fmtTick(tt)}</text>`;
+  }
   const path = pts.map((p, i) => (i ? "L" : "M") + X(p.t).toFixed(1) + "," + Y(p.v).toFixed(1)).join(" ");
-  if (pts.length > 1) svg += `<path d="${path}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+  if (pts.length > 1) {
+    svg += `<path d="${path} L${X(pts[pts.length-1].t).toFixed(1)},${Y(0)} L${X(pts[0].t).toFixed(1)},${Y(0)} Z" fill="${col}" opacity="0.08"/>`;
+    svg += `<path d="${path}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+  }
   const last = pts[pts.length - 1];
   svg += `<circle cx="${X(last.t)}" cy="${Y(last.v)}" r="4" fill="${col}" stroke="${cssVar("--surface-1")}" stroke-width="2"/>` +
          `<text x="${Math.min(X(last.t)+8, W-4)}" y="${Y(last.v)+4}" font-size="12" fill="${cssVar("--text-primary")}">${last.v} ledige</text>` +
@@ -888,7 +935,10 @@ function renderCurve(depId) {
 }
 function renderTable() {
   const tbl = $("#depTable");
-  const rows = [...visible()].sort((a, b) => b.depart.localeCompare(a.depart)).slice(0, 150);
+  const vis = [...visible()];
+  const upcoming = vis.filter(d => !d.sailed).sort((a, b) => a.depart.localeCompare(b.depart));
+  const sailedRows = vis.filter(d => d.sailed).sort((a, b) => b.depart.localeCompare(a.depart));
+  const rows = [...upcoming, ...sailedRows].slice(0, 250);
   const thead = document.createElement("thead"); const hr = document.createElement("tr");
   for (const h of ["Afgang", "Overfart", "Færge", "Ledige biler", "Belægning (est.)", "Ledige pax", "Status", "Sidste måling"]) {
     const th = document.createElement("th"); th.textContent = h; hr.append(th);
