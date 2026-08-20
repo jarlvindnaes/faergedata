@@ -166,6 +166,7 @@ def main():
             "route_id": int(last["ferry_route_id"]),
             "crossing": last["crossing"],
             "depart": last["depart"],
+            "arrival": last["arrival"],
             "ferry": last["ferry"],
             "sailed": sailed,
             "final_avail_cars": final["available_cars"],

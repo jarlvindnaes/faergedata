@@ -64,7 +64,8 @@
     border-radius: 999px; padding: 1px 8px; font-variant-numeric: tabular-nums;
     align-self: center; flex-shrink: 0;
   }
-  .topbar .live { color: var(--text-muted); font-size: 12px; flex: 1; }
+  .topbar .live { color: var(--text-muted); font-size: 12px; flex: 1 1 240px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #nextScrape { white-space: nowrap; }
   .topbar .live .livedot {
     display: inline-block; width: 7px; height: 7px; border-radius: 50%;
     background: var(--fejo); margin-right: 6px; vertical-align: 1px;
@@ -155,6 +156,36 @@
   .ferry-card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 14px; padding: 14px; }
   .ferry-card .nm { font-weight: 700; font-size: 13px; letter-spacing: 0.03em; }
   .ferry-card .sub { color: var(--text-muted); font-size: 12px; margin-bottom: 8px; }
+  .ferry-shape { display: block; }
+  .ferry-shape .hull-grp { transform-origin: 60px 22px; }
+  .ferry-shape.sailing .hull-grp { animation: ferry-rock 3.2s ease-in-out infinite; }
+  .ferry-shape.docked .hull-grp { animation: ferry-bob 5.5s ease-in-out infinite; }
+  .ferry-shape .waves { animation: none; }
+  .ferry-shape.sailing .waves { animation: wave-drift 2.2s linear infinite; }
+  .ferry-shape.flip .hull-grp { transform: scaleX(-1); transform-origin: 60px 17px; }
+  .ferry-shape.flip.sailing .hull-grp { animation: ferry-rock-flip 3.2s ease-in-out infinite; }
+  @keyframes ferry-rock {
+    0%,100% { transform: rotate(-1.3deg) translateY(0.4px); }
+    50% { transform: rotate(1.3deg) translateY(-0.8px); }
+  }
+  @keyframes ferry-rock-flip {
+    0%,100% { transform: scaleX(-1) rotate(-1.3deg) translateY(0.4px); }
+    50% { transform: scaleX(-1) rotate(1.3deg) translateY(-0.8px); }
+  }
+  @keyframes ferry-bob {
+    0%,100% { transform: translateY(0); }
+    50% { transform: translateY(-0.7px); }
+  }
+  @keyframes wave-drift { from { transform: translateX(0); } to { transform: translateX(-24px); } }
+  .ferry-status {
+    display: inline-block; font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em;
+    border-radius: 999px; padding: 1px 8px; margin-bottom: 4px;
+  }
+  .ferry-status.sailing { color: var(--ic); border: 1px solid var(--ic); }
+  .ferry-status.docked { color: var(--text-secondary); border: 1px solid var(--border); }
+  @media (prefers-reduced-motion: reduce) {
+    .ferry-shape .hull-grp, .ferry-shape .waves { animation: none !important; }
+  }
   .ferry-card .cd {
     font-family: var(--mono); font-variant-numeric: tabular-nums;
     font-size: 17px; font-weight: 600; letter-spacing: 0.02em; margin: 2px 0 6px;
@@ -200,6 +231,14 @@
   details.panel > summary { cursor: pointer; font-size: 14px; font-weight: 600; letter-spacing: 0.02em; }
   .guide { margin-top: 14px; }
   .routemap { margin-top: 14px; }
+  .livemap { margin-top: 14px; }
+  .livemap iframe { width: 100%; height: 380px; border: 0; border-radius: 8px; display: block; }
+  .punct-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-bottom: 12px; }
+  .punct-tile { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+  .punct-tile .t-name { font-size: 12px; font-weight: 700; letter-spacing: 0.05em; }
+  .punct-tile .t-big { font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; margin: 2px 0; }
+  .punct-tile .t-big .u { font-size: 12px; font-weight: 400; color: var(--text-secondary); }
+  .punct-tile .t-sub { font-size: 11.5px; color: var(--text-muted); }
   .routemap svg { display: block; width: 100%; max-height: 380px; height: auto; margin-top: 8px; }
   .routemap .isl-shape { stroke-linejoin: round; }
   .routemap text { font-size: 3px; letter-spacing: 0.06em; font-weight: 650; }
@@ -237,7 +276,7 @@
 <div class="wrap">
   <div class="topbar">
     <h1>FÆRGEDATA · SMÅLANDSFARVANDET</h1>
-    <span class="ver" title="Dashboardversion">v4.5</span>
+    <span class="ver" title="Dashboardversion">v4.6</span>
     <span class="live" id="meta">Indlæser …</span>
     <span class="live nextscrape" id="nextScrape" style="flex:0 0 auto"></span>
     <button id="themeToggle" aria-label="Skift mellem lyst og mørkt tema">◐ Tema</button>
@@ -259,6 +298,12 @@
   <details class="panel routemap" id="routeMapPanel" open>
     <summary>RUTEKORT · Smålandsfarvandet <span class="desc">— OSM-sejlruter, klik for at skjule</span></summary>
     <div id="routeMap"></div>
+  </details>
+
+  <details class="panel livemap" id="livePanel">
+    <summary>LIVE · færgerne lige nu <span class="desc">— realtids-AIS (VesselFinder-kort, indlæses ved klik)</span></summary>
+    <div id="liveMap"></div>
+    <p class="desc" style="margin-top:6px">Eksternt kort fra VesselFinder. M/F Femøsund, M/F Askø og M/F Christine sejler i udsnittet mellem Kragenæs og øerne.</p>
   </details>
 
   <details class="panel guide">
@@ -330,6 +375,17 @@
     <p class="desc">Hvid = alle bilpladser ledige · jo mørkere rød, jo mere booket · <b>Fuld</b> = udsolgt.
     Med "Alle øer" vises dagens mest pressede afgang pr. overfart — vælg en ø for at folde alle afgangstider ud.</p>
     <div id="heatWrap"></div>
+  </div>
+
+  <div class="sectionlab">PUNKTLIGHED</div>
+  <div class="panel">
+    <h2>AFSEJLINGER · faktisk vs. planlagt (AIS)</h2>
+    <p class="desc">Hver nat sammenholdes færgernes AIS-spor (Søfartsstyrelsens åbne arkiv) med de planlagte
+    afgange: forsinkelse i minutter pr. afsejling. Over 5 min markeres rødt. "Ikke bekræftet" betyder blot,
+    at AIS-sporet ikke viste en afsejling i vinduet — det bruges aldrig alene som bevis for aflysning.</p>
+    <div id="punctSummary" class="punct-summary"></div>
+    <div id="punctChart"></div>
+    <div class="legend" id="punctLegend"></div>
   </div>
 
   <div class="sectionlab">BOOKINGDYNAMIK</div>
@@ -566,6 +622,21 @@ function renderBoard() {
   }));
 }
 
+/* ---------- live-kort (lazy) ---------- */
+(() => {
+  const panel = document.getElementById("livePanel");
+  let loaded = false;
+  panel.addEventListener("toggle", () => {
+    if (!panel.open || loaded) return;
+    loaded = true;
+    const f = document.createElement("iframe");
+    f.src = "https://www.vesselfinder.com/aismap?zoom=11&lat=54.93&lon=11.44&names=true";
+    f.title = "Live AIS-kort over Smålandsfarvandet (VesselFinder)";
+    f.loading = "lazy"; f.referrerPolicy = "no-referrer";
+    document.getElementById("liveMap").append(f);
+  });
+})();
+
 /* ---------- rutekort ---------- */
 const MAP = {"w": 100.0, "h": 91.8, "islands": {"femo": ["M66.3,9.3 L66.6,10.6 L67.6,11.7 L70.6,13.9 L72.6,14.6 L73.4,16.1 L74.2,15.8 L74.7,16.1 L74.3,16.3 L74.3,16.7 L74.9,16.4 L75.2,16.6 L78.6,23.4 L79.2,25.6 L79.4,28.7 L84.3,33.9 L85.8,37.2 L86.9,32.6 L87.9,30.3 L89.3,29.0 L90.5,27.2 L96.9,20.2 L100.0,15.2 L95.1,7.1 L91.0,2.8 L88.7,1.8 L80.9,2.3 L78.1,1.2 L76.9,0.1 L75.5,0.1 L70.2,2.8 L68.7,4.0 L67.1,5.9 L66.5,7.2 L66.3,9.3 Z"], "asko": ["M55.9,79.2 L56.9,87.4 L59.2,90.0 L58.7,89.1 L59.0,89.0 L59.5,90.0 L59.3,88.4 L61.4,88.5 L64.8,88.1 L65.6,87.5 L70.7,85.5 L73.4,86.6 L74.9,87.9 L76.5,88.2 L76.9,86.6 L75.8,84.6 L72.7,83.3 L68.7,80.9 L66.7,79.1 L66.8,78.2 L66.2,77.0 L63.2,74.5 L62.6,74.8 L62.9,76.1 L62.3,77.4 L60.3,76.9 L58.1,79.3 L56.8,79.3 L56.0,78.7 L55.9,79.2 Z", "M54.1,67.1 L54.8,68.4 L56.3,68.8 L57.2,70.7 L58.5,71.8 L58.7,71.6 L58.4,71.4 L60.1,70.5 L60.5,69.4 L61.4,69.2 L62.4,67.8 L64.2,67.2 L64.8,66.2 L65.4,66.3 L65.7,67.2 L66.7,68.1 L67.3,68.0 L67.6,68.7 L70.0,66.0 L69.9,65.7 L66.8,64.9 L58.9,66.5 L54.7,65.5 L54.3,65.6 L54.1,67.1 Z"], "fejo": ["M1.9,33.7 L2.2,36.1 L3.3,39.1 L4.4,40.5 L5.2,43.1 L6.4,45.2 L6.2,46.0 L5.9,46.2 L6.2,46.5 L5.9,46.9 L7.0,46.6 L11.6,50.2 L14.4,51.9 L18.2,55.2 L19.9,59.1 L22.4,57.2 L25.7,50.5 L28.9,46.9 L30.6,46.1 L32.7,42.3 L34.6,40.8 L35.4,39.6 L36.4,39.4 L36.4,38.9 L36.6,39.5 L39.0,40.1 L41.7,40.2 L43.2,39.4 L44.2,39.3 L48.2,39.9 L50.4,39.6 L52.5,40.6 L53.0,39.7 L53.0,37.9 L53.5,36.5 L52.7,33.1 L49.9,29.9 L48.2,27.0 L45.6,23.9 L42.8,22.5 L39.8,22.1 L37.1,22.6 L34.0,24.2 L32.2,24.2 L27.8,21.7 L25.1,19.2 L24.1,19.9 L23.5,22.2 L23.2,24.3 L24.1,25.6 L24.8,31.1 L24.3,35.2 L23.4,36.3 L22.5,36.7 L21.2,36.6 L20.8,36.1 L19.4,35.4 L17.5,32.5 L14.2,31.9 L9.9,30.1 L8.5,30.3 L8.6,30.7 L9.3,30.7 L9.5,31.7 L8.5,34.4 L7.8,35.1 L5.0,35.3 L3.2,34.2 L2.7,33.5 L3.2,32.4 L3.1,30.7 L2.6,30.2 L2.1,30.1 L1.9,33.7 Z"]}, "routes": {"femo": "M74.4,16.5 L73.1,16.5 L70.4,16.1 L69.3,16.5 L63.9,23.2 L63.2,24.4 L61.5,28.9 L58.4,40.1 L55.1,43.3 L44.8,49.0 L37.0,55.4 L18.1,69.4 L17.1,70.0 L16.2,69.7 L6.1,62.6 L1.2,63.1 L0.0,63.1", "fejo": "M0.0,63.1 L1.0,62.8 L4.5,60.5 L5.1,54.3 L4.8,51.1 L5.7,47.0 L6.0,46.3", "asko": "M0.0,63.1 L1.2,63.1 L6.1,62.6 L16.2,69.7 L22.3,74.2 L32.6,77.7 L43.0,83.9 L51.2,91.8 L56.9,91.8 L58.6,91.1 L59.1,90.7 L59.3,90.1 L59.3,89.6"}, "kragenaes": [0.0, 63.1], "harbors": {"femo": [74.4, 16.5], "fejo": [6.0, 46.3], "asko": [59.3, 89.6]}, "labels": {"femo": [78.5, 14.9], "asko": [64.3, 83.0], "fejo": [23.3, 36.2]}};
 function renderRouteMap() {
@@ -605,6 +676,64 @@ function renderRouteMap() {
   });
 }
 
+/* ---------- punktlighed ---------- */
+let PUNCT = null;
+function renderPunctuality() {
+  const sumEl = $("#punctSummary"), chartEl = $("#punctChart"), legEl = $("#punctLegend");
+  if (!PUNCT || !PUNCT.days_covered || !PUNCT.days_covered.length) {
+    sumEl.replaceChildren();
+    legEl.replaceChildren();
+    chartEl.textContent = "AIS-analysen kører hver nat kl. ca. 05.40 og sammenholder gårsdagens sejladser med planen. Første resultater vises her i morgen.";
+    chartEl.classList.add("empty-note");
+    return;
+  }
+  chartEl.classList.remove("empty-note");
+  const isls = activeIslands();
+  sumEl.replaceChildren(...isls.map(isl => {
+    const r = PUNCT.routes[String(isl.id)] || {};
+    const tile = document.createElement("div"); tile.className = "punct-tile";
+    tile.style.borderLeft = "3px solid " + iColor(isl);
+    const nm = document.createElement("div"); nm.className = "t-name"; nm.textContent = isl.name;
+    const big = document.createElement("div"); big.className = "t-big";
+    big.textContent = r.median_delay_min === null || r.median_delay_min === undefined ? "–" : (r.median_delay_min > 0 ? "+" : "") + r.median_delay_min;
+    const u = document.createElement("span"); u.className = "u"; u.textContent = " min median"; big.append(u);
+    const sub2 = document.createElement("div"); sub2.className = "t-sub";
+    sub2.textContent = `${r.confirmed ?? 0} af ${r.planned ?? 0} bekræftet · ${r.late_over_5min ?? 0} over 5 min`;
+    tile.append(nm, big, sub2);
+    return tile;
+  }));
+  const deps = PUNCT.departures.filter(d =>
+    d.delay_min !== null && (selIsland === "all" || d.route_id === Number(selIsland))).slice(-60);
+  if (!deps.length) { chartEl.textContent = "Ingen bekræftede afsejlinger i AIS-sporet endnu."; chartEl.classList.add("empty-note"); legEl.replaceChildren(); return; }
+  const W = Math.min(1120, chartEl.clientWidth || 800), H = 190, mL = 40, mB = 26, mT = 10;
+  const maxD = Math.max(10, ...deps.map(d => d.delay_min));
+  const minD = Math.min(-3, ...deps.map(d => d.delay_min));
+  const Y = v => mT + (H - mT - mB) * (1 - (v - minD) / (maxD - minD));
+  const bw = Math.max(3, Math.min(14, (W - mL - 10) / deps.length - 2));
+  let svg = `<svg width="${W}" height="${H}" role="img" aria-label="Forsinkelse pr. afsejling, minutter">`;
+  for (const g of [0, 5, 10, 15, 20, 30].filter(v => v >= minD && v <= maxD))
+    svg += `<line x1="${mL}" x2="${W-6}" y1="${Y(g)}" y2="${Y(g)}" stroke="${cssVar(g === 0 ? "--axis" : "--grid")}"/>` +
+           `<text x="${mL-6}" y="${Y(g)+4}" text-anchor="end" font-size="11" fill="${cssVar("--text-muted")}">${g}</text>`;
+  deps.forEach((d, i) => {
+    const isl = ISLANDS.find(x => x.id === d.route_id);
+    const x = mL + 4 + i * ((W - mL - 10) / deps.length);
+    const late = d.delay_min > 5;
+    const col = late ? cssVar("--critical") : iColor(isl);
+    const y0 = Y(0), y1 = Y(d.delay_min);
+    svg += `<rect class="pbar" data-i="${deps.length - 60 >= 0 ? i : i}" data-tt="${d.crossing} · ${d.depart.replace("T", " kl. ").slice(0, 22)} · ${d.delay_min > 0 ? "+" : ""}${d.delay_min} min" x="${x}" y="${Math.min(y0, y1)}" width="${bw}" height="${Math.max(1.5, Math.abs(y1 - y0))}" rx="1.5" fill="${col}" tabindex="0"/>`;
+  });
+  svg += `</svg>`;
+  chartEl.innerHTML = svg;
+  chartEl.querySelectorAll(".pbar").forEach(rect => {
+    const show = evt => showTT(evt, ttNode([[null, "", rect.dataset.tt, true]]));
+    rect.addEventListener("pointermove", show);
+    rect.addEventListener("focus", () => show({ clientX: innerWidth / 2, clientY: 300 }));
+    rect.addEventListener("pointerleave", hideTT); rect.addEventListener("blur", hideTT);
+  });
+  legendFor(legEl, [...isls.map(i => ({ name: i.name, color: iColor(i) })),
+    { name: "over 5 min forsinket", color: cssVar("--critical") }]);
+}
+
 /* ---------- nedtællinger ---------- */
 function fmtCountdown(ms) {
   if (ms <= 0) return "nu";
@@ -627,12 +756,14 @@ function tickCountdowns() {
   document.querySelectorAll("[data-cd]").forEach(el => {
     const t = Number(el.dataset.cd);
     el.textContent = fmtCountdown(t - now);
-    if (el.classList.contains("cd-dep")) el.closest(".cd")?.classList.toggle("soon", t - now < 45 * 60000 && t - now > 0);
+    if (el.classList.contains("cd-dep")) el.closest(".cd")?.classList.toggle("soon", t - now < 10 * 60000 && t - now > 0);
   });
   const ns = $("#nextScrape");
   if (ns) ns.textContent = `næste måling om ca. ${fmtCountdown(nextScrapeUtc() - now)}`;
 }
 setInterval(tickCountdowns, 1000);
+/* færge-status (i havn/undervejs) genberegnes hvert 30. sekund */
+setInterval(() => { if (DATA) renderFerries(); }, 30000);
 
 /* ---------- vogndæk ---------- */
 function renderFerries() {
@@ -644,9 +775,15 @@ function renderFerries() {
       .sort((a, b) => a.depart.localeCompare(b.depart))[0];
     const nm = document.createElement("div"); nm.className = "nm";
     nm.textContent = isl.ferry;
+    const st = ferryState(isl.id);
+    const chip = document.createElement("span");
+    chip.className = "ferry-status " + st.state;
+    chip.textContent = st.state === "sailing"
+      ? `UNDERVEJS · ${st.crossing.replace(" > ", " → ")} · ank. ${st.arrival.slice(11, 16)}`
+      : "I HAVN";
     const sub = document.createElement("div"); sub.className = "sub";
     sub.textContent = next ? `Næste afgang: ${fmtDT(next.depart)} · ${next.crossing}` : "Ingen kommende afgange";
-    card.append(ferryPictogram(iColor(isl)), nm, sub);
+    card.append(ferryPictogram(iColor(isl), st.state, st.state === "sailing" && !st.outbound), chip, nm, sub);
     if (next) {
       const cd = document.createElement("div"); cd.className = "cd";
       const lab = document.createElement("span"); lab.className = "cd-label"; lab.textContent = "AFGANG OM";
@@ -671,16 +808,33 @@ function renderFerries() {
     return card;
   }));
 }
-function ferryPictogram(color) {
+function ferryPictogram(color, state, flip) {
   const span = document.createElement("span");
-  span.innerHTML = `<svg width="120" height="34" viewBox="0 0 120 34" aria-hidden="true" style="display:block;margin-bottom:4px">
-    <path d="M6,22 L114,22 L106,31 L12,31 Z" fill="${color}"/>
-    <rect x="30" y="12" width="56" height="9" rx="2" fill="${color}" opacity="0.55"/>
-    <rect x="48" y="4" width="20" height="7" rx="2" fill="${color}" opacity="0.8"/>
-    <line x1="86" y1="21" x2="86" y2="8" stroke="${color}" stroke-width="2"/>
-    <path d="M0,25 q6,4 12,0 t12,0 t12,0 t12,0 t12,0 t12,0 t12,0 t12,0 t12,0 t12,0" fill="none" stroke="${cssVar("--axis")}" stroke-width="1.5" opacity="0.7"/>
+  span.innerHTML = `<svg width="120" height="34" viewBox="0 0 120 34" aria-hidden="true"
+      class="ferry-shape ${state || "docked"}${flip ? " flip" : ""}" style="margin-bottom:4px">
+    <g class="hull-grp">
+      <path d="M6,22 L114,22 L106,31 L12,31 Z" fill="${color}"/>
+      <rect x="30" y="12" width="56" height="9" rx="2" fill="${color}" opacity="0.55"/>
+      <rect x="48" y="4" width="20" height="7" rx="2" fill="${color}" opacity="0.8"/>
+      <line x1="86" y1="21" x2="86" y2="8" stroke="${color}" stroke-width="2"/>
+    </g>
+    <g class="waves">
+      <path d="M-24,25 q6,4 12,0 t12,0 t12,0 t12,0 t12,0 t12,0 t12,0 t12,0 t12,0 t12,0 t12,0 t12,0" fill="none" stroke="${cssVar("--axis")}" stroke-width="1.5" opacity="0.7"/>
+    </g>
   </svg>`;
   return span;
+}
+function ferryState(islId) {
+  /* underway hvis nu er mellem depart og arrival på seneste afgang */
+  const now = Date.now();
+  const deps = byIsland(islId).filter(d => new Date(d.depart) <= now)
+    .sort((a, b) => b.depart.localeCompare(a.depart));
+  const cur = deps[0];
+  if (cur && cur.arrival && now < new Date(cur.arrival).getTime()) {
+    return { state: "sailing", crossing: cur.crossing, arrival: cur.arrival,
+             outbound: cur.crossing.trim().startsWith("Kragenæs") };
+  }
+  return { state: "docked" };
 }
 
 /* ---------- generisk linjechart ---------- */
@@ -1129,13 +1283,16 @@ function renderTable() {
   tbl.replaceChildren(thead, tbody);
 }
 function render() {
-  renderIslands(); renderRouteMap(); renderBoard(); renderFerries(); renderForward();
+  renderIslands(); renderRouteMap(); renderBoard(); renderFerries(); renderForward(); renderPunctuality();
   renderAlerts(); renderCancels(); renderHeat(); renderAggCurve();
   renderCurvePanel(); renderLead(); renderSlot(); renderHistory();
   renderFingerprint(); renderTable();
 }
-fetch("data.json").then(r => r.json()).then(d => {
-  DATA = d;
+Promise.all([
+  fetch("data.json").then(r => r.json()),
+  fetch("punctuality.json").then(r => r.ok ? r.json() : null).catch(() => null),
+]).then(([d, pj]) => {
+  DATA = d; PUNCT = pj;
   const dot = document.createElement("span"); dot.className = "livedot";
   $("#meta").replaceChildren(dot, document.createTextNode(
     `Opdateret ${fmtDT(d.generated_utc)} · ${d.n_observations.toLocaleString("da-DK")} målinger`));

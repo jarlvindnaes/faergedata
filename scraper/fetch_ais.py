@@ -25,37 +25,52 @@ FERRIES = {
     "219000811": "asko",       # M/F Askø     (Kragenæs-Askø)
     "219002177": "christine",  # M/F Christine (Kragenæs-Fejø)
 }
-URL = "https://web.ais.dk/aisdata/aisdk-{d}.zip"
+URLS = [
+    "https://web.ais.dk/aisdata/aisdk-{d}.zip",
+    "http://web.ais.dk/aisdata/aisdk-{d}.zip",
+]
 SAMPLE_SECONDS = 30
+BACKFILL_DAYS = 7  # hent op til så mange manglende dage pr. kørsel
 
 
-def main() -> None:
-    if len(sys.argv) > 1:
-        day = sys.argv[1]
-    else:
-        day = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+def download(day: str, tmp) -> bool:
+    """Prøv alle mirrors/protokoller med retries. False hvis arkivet er nede."""
+    import time
+    # web.ais.dk kører periodevis med udløbet certifikat; arkivet er offentligt.
+    ctx = ssl._create_unverified_context()
+    headers = {"User-Agent": "faergedata-monitor/1.0 (AIS-punktlighed for oefaergerne; se GitHub-repo)"}
+    for attempt in range(3):
+        for base in URLS:
+            url = base.format(d=day)
+            try:
+                req = urllib.request.Request(url, headers=headers)
+                with urllib.request.urlopen(req, timeout=120, context=ctx) as r:
+                    tmp.seek(0); tmp.truncate()
+                    while True:
+                        chunk = r.read(1 << 20)
+                        if not chunk:
+                            break
+                        tmp.write(chunk)
+                tmp.flush()
+                if tmp.tell() > 1000:
+                    print(f"  hentet {url} ({tmp.tell()/1e6:.0f} MB)", flush=True)
+                    return True
+            except Exception as e:
+                print(f"  {url}: {type(e).__name__}: {e}", flush=True)
+        time.sleep(20 * (attempt + 1))
+    return False
 
+
+def process_day(day: str) -> bool:
     out_dir = ROOT / "data" / "ais"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"ais-{day}.csv"
 
-    url = URL.format(d=day)
-    print(f"Henter {url} …", flush=True)
-    # web.ais.dk kører periodevis med udløbet certifikat; arkivet er offentligt.
-    ctx = ssl._create_unverified_context()
-    req = urllib.request.Request(url, headers={"User-Agent": "faergedata-monitor/1.0 (AIS-punktlighed for oefaergerne; se GitHub-repo)"})
-
+    print(f"Henter AIS for {day} …", flush=True)
     with tempfile.NamedTemporaryFile(suffix=".zip", delete=True) as tmp:
-        with urllib.request.urlopen(req, timeout=120, context=ctx) as r:
-            while True:
-                chunk = r.read(1 << 20)
-                if not chunk:
-                    break
-                tmp.write(chunk)
-        tmp.flush()
-        size_mb = tmp.tell() / 1e6
-        print(f"Downloadet {size_mb:.0f} MB, filtrerer {len(FERRIES)} MMSI'er …", flush=True)
-
+        if not download(day, tmp):
+            print(f"  arkivet svarer ikke for {day} — springer over (hentes senere).")
+            return False
         rows, last_kept, n_scanned = [], {}, 0
         with zipfile.ZipFile(tmp.name) as z:
             name = z.namelist()[0]
@@ -94,6 +109,24 @@ def main() -> None:
     per = {m: sum(1 for r in rows if r[1] == m) for m in FERRIES}
     print(f"Scannede {n_scanned:,} AIS-rækker; gemte {len(rows)} positioner "
           f"({', '.join(FERRIES[m] + '=' + str(n) for m, n in per.items())}) i {out_path.name}")
+    return True
+
+
+def main() -> None:
+    if len(sys.argv) > 1 and sys.argv[1].strip():
+        days = [sys.argv[1].strip()]
+    else:
+        # backfill: alle manglende dage inden for BACKFILL_DAYS (senest først = i går)
+        have = {p.stem[4:] for p in (ROOT / "data" / "ais").glob("ais-*.csv")}
+        today = datetime.now(timezone.utc).date()
+        days = [(today - timedelta(days=o)).strftime("%Y-%m-%d")
+                for o in range(1, BACKFILL_DAYS + 1)]
+        days = [d for d in days if d not in have]
+    if not days:
+        print("Ingen manglende AIS-dage.")
+        return
+    got = sum(1 for d in days if process_day(d))
+    print(f"{got} af {len(days)} dage hentet.")
 
 
 if __name__ == "__main__":
