@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Færgedata Historik – Lolland Færgefart 2007–2026</title>
+<meta name="description" content="Historisk udvikling for færgerne til Femø, Askø og Fejø: overfarter, passagerer, nedskæringer og nødplaner — dokumenteret med kommunens egne tal.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>⏳</text></svg>">
+<style>
+  .viz-root {
+    color-scheme: light;
+    --surface-1: #fcfcfb; --page: #f9f9f7;
+    --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #898781;
+    --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.10);
+    --femo: #2a78d6; --asko: #eb6834; --fejo: #1baf7a;
+    --femo-wash: rgba(42,120,214,.10); --asko-wash: rgba(235,104,52,.10); --fejo-wash: rgba(27,175,122,.10);
+    --critical: #d03b3b; --warning: #fab219; --good-text: #006300;
+    --seq-100:#cde2fb; --seq-200:#9ec5f4; --seq-300:#6da7ec; --seq-400:#3987e5;
+    --seq-500:#256abf; --seq-600:#184f95;
+    --heat-0:#ffffff; --heat-1:#fcd9cc; --heat-2:#f5ad92; --heat-3:#e97f56;
+    --heat-4:#cc4d28; --heat-5:#a12f14; --heat-full:#7a1e0a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) .viz-root {
+      color-scheme: dark;
+      --surface-1: #1a1a19; --page: #0d0d0d;
+      --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #898781;
+      --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+      --femo: #3987e5; --asko: #d95926; --fejo: #199e70;
+      --femo-wash: rgba(57,135,229,.14); --asko-wash: rgba(217,89,38,.14); --fejo-wash: rgba(25,158,112,.14);
+      --critical: #d03b3b; --good-text: #0ca30c;
+    }
+  }
+  :root[data-theme="dark"] .viz-root {
+    color-scheme: dark;
+    --surface-1: #1a1a19; --page: #0d0d0d;
+    --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+    --femo: #3987e5; --asko: #d95926; --fejo: #199e70;
+    --femo-wash: rgba(57,135,229,.14); --asko-wash: rgba(217,89,38,.14); --fejo-wash: rgba(25,158,112,.14);
+    --critical: #d03b3b; --good-text: #0ca30c;
+  }
+  * { box-sizing: border-box; }
+  .viz-root { --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace; }
+  body.viz-root { margin: 0; background: var(--page); color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 14px; line-height: 1.45; }
+  .wrap { max-width: 1160px; margin: 0 auto; padding: 20px 16px 64px; }
+  .topbar { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+    position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--page) 86%, transparent);
+    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+    padding: 12px 0 10px; border-bottom: 1px solid var(--border); }
+  .topbar h1 { font-size: 20px; margin: 0; letter-spacing: 0.04em; }
+  .topbar .ver { font-size: 11px; color: var(--text-muted); border: 1px solid var(--border);
+    border-radius: 999px; padding: 1px 8px; align-self: center; }
+  .topbar a.back { margin-left: auto; font-size: 12px; color: var(--femo); align-self: center; }
+  #themeToggle { background: var(--surface-1); color: var(--text-secondary); border: 1px solid var(--border);
+    border-radius: 8px; padding: 5px 12px; font: inherit; font-size: 12px; cursor: pointer; }
+  .subtitle { color: var(--text-secondary); margin: 12px 0 16px; max-width: 80ch; }
+  .sectionlab { color: var(--text-muted); font-size: 11px; letter-spacing: 0.16em; margin: 26px 0 10px;
+    display: flex; align-items: center; gap: 12px; }
+  .sectionlab::after { content: ""; flex: 1; height: 1px; background: var(--grid); }
+  .panel { background: var(--surface-1); border: 1px solid var(--border); border-radius: 14px;
+    padding: 16px 18px; margin-bottom: 14px; min-width: 0; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+  .panel h2 { font-size: 14px; margin: 0 0 2px; letter-spacing: 0.02em; }
+  .panel .desc { color: var(--text-muted); font-size: 12px; margin: 0 0 10px; max-width: 88ch; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 880px) { .grid2 { grid-template-columns: 1fr; } }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+  .tile { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
+  .tile .t-lab { font-size: 11px; letter-spacing: 0.1em; color: var(--text-muted); }
+  .tile .t-val { font-size: 26px; font-weight: 650; font-variant-numeric: tabular-nums; margin: 2px 0; }
+  .tile .t-val .u { font-size: 12px; font-weight: 400; color: var(--text-secondary); }
+  .tile .t-sub { font-size: 11.5px; color: var(--text-secondary); }
+  .tile .down { color: var(--critical); font-weight: 650; }
+  svg text { font-family: inherit; }
+  .quote { border-left: 3px solid var(--critical); padding: 8px 12px; margin: 10px 0;
+    background: color-mix(in srgb, var(--critical) 5%, transparent); border-radius: 0 8px 8px 0;
+    font-size: 13px; color: var(--text-primary); }
+  .quote .q-src { display: block; color: var(--text-muted); font-size: 11px; margin-top: 4px; }
+  .ev-row { display: flex; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--grid); font-size: 13px; }
+  .ev-row:last-child { border-bottom: none; }
+  .ev-row .d { font-family: var(--mono); font-size: 12px; color: var(--text-secondary); min-width: 84px; }
+  .plan-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 640px) { .plan-compare { grid-template-columns: 1fr; } }
+  .plan-card { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
+  .plan-card h3 { margin: 0 0 6px; font-size: 13px; }
+  .plan-card .layer { font-size: 12.5px; margin: 6px 0; }
+  .plan-card .layer b { font-variant-numeric: tabular-nums; }
+  .gone { color: var(--critical); font-weight: 600; }
+  footer { color: var(--text-muted); font-size: 12px; margin-top: 24px; max-width: 84ch; }
+  a { color: var(--femo); }
+</style>
+</head>
+<body class="viz-root">
+<div class="wrap">
+  <div class="topbar">
+    <h1>FÆRGEDATA · HISTORIK</h1>
+    <span class="ver">H1.0</span>
+    <a class="back" href="index.html">← Terminal (live)</a>
+    <button id="themeToggle" aria-label="Skift tema">◐ Tema</button>
+  </div>
+  <p class="subtitle">Den historiske udvikling for færgerne Kragenæs–Femø, –Askø og –Fejø,
+  dokumenteret med <b>kommunens egne offentliggjorte tal</b> og arkiverede sejlplaner.
+  Hvert tal har en kilde nederst på siden.</p>
+
+  <div class="sectionlab">NØGLETAL · KOMMUNENS EGNE</div>
+  <div class="tiles" id="keyTiles"></div>
+
+  <div class="sectionlab">UDVIKLING</div>
+  <div class="panel">
+    <h2>OVERFARTER PR. ÅR · og nedskæringen 1. januar 2024</h2>
+    <p class="desc">Antal enkeltoverfarter ifølge kommunens færgestrategiside. Fra toppen i 2023 til 2024
+    forsvandt <b>2.344 overfarter (−8,9&nbsp;%)</b> — samtidig med at strategien om at skære
+    "ydertidspunkter og weekend" trådte i kraft 1. januar 2024. Mellemliggende år søges via aktindsigt.</p>
+    <div id="crossChart"></div>
+  </div>
+  <div class="grid2">
+    <div class="panel">
+      <h2>PASSAGERER & BILER · 2007 → 2024</h2>
+      <p class="desc">Passagertallet faldt 9,7 % på 17 år — mens øernes befolkning faldt 22,9 %.
+      Trafikken pr. øbo er altså <i>steget</i>.</p>
+      <div id="paxChart"></div>
+    </div>
+    <div class="panel">
+      <h2>ØKONOMI · underskud pr. år (mio. kr)</h2>
+      <p class="desc">Udgifter, billetindtægter og nettounderskud ifølge strategisiden.</p>
+      <div id="ecoChart"></div>
+    </div>
+  </div>
+
+  <div class="sectionlab">FARTPLANEN DER FORSVANDT</div>
+  <div class="panel">
+    <h2>FEMØ-RUTEN · 2021 vs. 2026</h2>
+    <p class="desc">Sammenligning af den arkiverede sejlplan (Internet Archive, februar 2021) med det
+    aktuelle bookingsystem. Grundplanen er intakt — men <b>hele aften-/natlaget af bestillingsafgange er
+    væk</b>. Det er præcis de afgange, strategien udpegede som "ydertidspunkter med lav belægning".</p>
+    <div class="plan-compare" id="planCompare"></div>
+  </div>
+
+  <div class="sectionlab">STRATEGIEN · MED DERES EGNE ORD</div>
+  <div class="panel">
+    <h2>CITATER · høringsdokument, juni 2023</h2>
+    <p class="desc">Udkast til Strategi for fremtidens færgefart i Lolland Kommune.</p>
+    <div id="quotes"></div>
+  </div>
+
+  <div class="grid2">
+    <div class="panel">
+      <h2>NØDPLANER & DRIFTSFORSTYRRELSER</h2>
+      <p class="desc">Dokumenteret via arkiverede nyhedssider fra lollandfaergefart.lolland.dk.
+      Listen udbygges efterhånden som arkivet gennemgås.</p>
+      <div id="events"></div>
+    </div>
+    <div class="panel">
+      <h2>"HVER TIENDE FÆRGE SEJLER TOM" · 2021-argumentet</h2>
+      <p class="desc" id="emptyArg"></p>
+    </div>
+  </div>
+
+  <footer id="sources"></footer>
+</div>
+
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+$("#themeToggle").onclick = () => {
+  const r = document.documentElement;
+  const dark = r.dataset.theme ? r.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  r.dataset.theme = dark ? "light" : "dark";
+  render();
+};
+const cssVar = n => getComputedStyle(document.body).getPropertyValue(n).trim();
+const fmt = n => n.toLocaleString("da-DK");
+let H = null;
+
+function tile(lab, val, unit, sub, down) {
+  return `<div class="tile"><div class="t-lab">${lab}</div>
+    <div class="t-val${down ? " down" : ""}">${val}<span class="u"> ${unit}</span></div>
+    <div class="t-sub">${sub}</div></div>`;
+}
+function barChart(el, rows, opts) {
+  const W = Math.min(1080, el.clientWidth || 700), H0 = opts.h || 220, mL = 56, mB = 30, mT = 14;
+  const maxV = Math.max(...rows.map(r => r.v)) * 1.08;
+  const Y = v => mT + (H0 - mT - mB) * (1 - v / maxV);
+  const bw = Math.min(90, (W - mL - 20) / rows.length - 24);
+  let svg = `<svg width="${W}" height="${H0}" role="img" aria-label="${opts.aria}">`;
+  const step = Math.ceil(maxV / 4 / opts.tick) * opts.tick;
+  for (let g = 0; g <= maxV; g += step)
+    svg += `<line x1="${mL}" x2="${W-8}" y1="${Y(g)}" y2="${Y(g)}" stroke="${cssVar("--grid")}"/>` +
+           `<text x="${mL-6}" y="${Y(g)+4}" text-anchor="end" font-size="11" fill="${cssVar("--text-muted")}">${fmt(g)}</text>`;
+  rows.forEach((r, i) => {
+    const x = mL + 16 + i * ((W - mL - 20) / rows.length);
+    const col = r.hl ? cssVar("--critical") : cssVar("--femo");
+    svg += `<rect x="${x}" y="${Y(r.v)}" width="${bw}" height="${Y(0)-Y(r.v)}" rx="3" fill="${col}"/>` +
+      `<text x="${x+bw/2}" y="${Y(r.v)-6}" text-anchor="middle" font-size="12" font-weight="650" fill="${cssVar("--text-primary")}">${fmt(r.v)}</text>` +
+      `<text x="${x+bw/2}" y="${H0-mB+16}" text-anchor="middle" font-size="12" fill="${cssVar("--text-secondary")}">${r.lab}</text>`;
+    if (r.note) svg += `<text x="${x+bw/2}" y="${H0-mB+29}" text-anchor="middle" font-size="10" fill="${cssVar("--critical")}">${r.note}</text>`;
+  });
+  svg += `<line x1="${mL}" x2="${W-8}" y1="${Y(0)}" y2="${Y(0)}" stroke="${cssVar("--axis")}"/></svg>`;
+  el.innerHTML = svg;
+}
+function render() {
+  if (!H) return;
+  const y07 = H.yearly.find(y => y.year === 2007), y23 = H.yearly.find(y => y.year === 2023), y24 = H.yearly.find(y => y.year === 2024);
+  $("#keyTiles").innerHTML =
+    tile("OVERFARTER 2023→2024", "−8,9", "%", `${fmt(y23.crossings)} → ${fmt(y24.crossings)} enkeltoverfarter`, true) +
+    tile("PLANLAGT REDUKTION", "15–20", "%", "strategiens eget mål (2023)", true) +
+    tile("PASSAGERER 2007→2024", "−9,7", "%", `${fmt(y07.pax)} → ${fmt(y24.pax)}`, true) +
+    tile("BEFOLKNING PÅ ØERNE", "−22,9", "%", `${H.population.y2007} → ${H.population.y2025} (2007→2025)`, true) +
+    tile("UNDERSKUD 2024", "21,4", "mio. kr", "udgifter 36,6 · billetter 6,2 mio.", false);
+  barChart($("#crossChart"), [
+    { lab: "2007", v: y07.crossings },
+    { lab: "2023", v: y23.crossings },
+    { lab: "2024", v: y24.crossings, hl: true, note: "strategi i kraft 1/1-24" },
+  ], { aria: "Enkeltoverfarter pr. år", tick: 2000 });
+  barChart($("#paxChart"), [
+    { lab: "2007", v: y07.pax },
+    { lab: "2024", v: y24.pax, hl: true },
+  ], { aria: "Passagerer pr. år", tick: 25000, h: 200 });
+  barChart($("#ecoChart"), H.economy.map(e => (
+    { lab: String(e.year), v: Math.abs(e.deficit_mio), hl: e.year === 2023 }
+  )), { aria: "Underskud mio. kr pr. år", tick: 5, h: 200 });
+  $("#planCompare").innerHTML = `
+    <div class="plan-card"><h3>2021 · arkiveret sejlplan</h3>
+      <div class="layer">Grundplan hverdage: <b>${H.fartplan_femo.y2021.weekday_base_per_direction} afgange</b> pr. retning</div>
+      <div class="layer">+ ${H.fartplan_femo.y2021.on_demand_layer}</div>
+      <div class="layer" style="color:var(--text-muted);font-size:11.5px">Kilde: ${H.fartplan_femo.y2021.source} · gyldig ${H.fartplan_femo.y2021.valid}</div></div>
+    <div class="plan-card"><h3>2026 · aktuelt bookingsystem</h3>
+      <div class="layer">Grundplan hverdage: <b>${H.fartplan_femo.y2026.weekday_base_per_direction} afgange</b> pr. retning</div>
+      <div class="layer gone">✕ ${H.fartplan_femo.y2026.on_demand_layer}</div>
+      <div class="layer" style="color:var(--text-muted);font-size:11.5px">Kilde: ${H.fartplan_femo.y2026.source}</div></div>`;
+  $("#quotes").innerHTML = H.strategy_2023.quotes.map(q =>
+    `<div class="quote">"${q}"<span class="q-src">${H.strategy_2023.source}</span></div>`).join("");
+  $("#events").innerHTML = H.disruptions.map(d =>
+    `<div class="ev-row"><span class="d">${d.date}</span><span>${d.text}</span></div>`).join("");
+  const e = H.empty_2021;
+  $("#emptyArg").innerHTML = `Kommunens hovedargument (2021-tal): ${fmt(e.empty)} af ${fmt(e.total_departures)}
+    afgange sejlede uden passagerer; om aftenen var det 15 % — samlet pris ${fmt(e.cost_kr)} kr.<br><br>
+    <b>Øboernes dokumenterede modsvar:</b> ${e.counter}<br><br>
+    <b>Terminalens modsvar:</b> gennemsnit og tomme returløb siger intet om spidsbelastning —
+    bildækket er flaskehalsen, og udsolgte afgange afviser biler, som aldrig optræder i kommunens statistik.
+    Se <a href="index.html">live-terminalen</a>.`;
+  $("#sources").innerHTML = "<b>Kilder:</b> " + H.sources.map(s => `<a href="${s.url}">${s.name}</a>`).join(" · ")
+    + `<br>${H.yearly_note} Siden opdateres efterhånden som flere årstal og arkiverede sejlplaner udtrækkes — og
+    verificeres mod Søfartsstyrelsens AIS-arkiv, når det igen er tilgængeligt.`;
+}
+fetch("history.json").then(r => r.json()).then(d => { H = d; render();
+  addEventListener("resize", () => { clearTimeout(render._t); render._t = setTimeout(render, 200); });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,55 @@
+{
+  "updated": "2026-08-20",
+  "yearly": [
+    { "year": 2007, "crossings": 21556, "pax": 267000, "cars": 129006, "pax_per_crossing": 12.4, "cars_per_crossing": 6.0 },
+    { "year": 2023, "crossings": 26460, "note": "højeste niveau i serien" },
+    { "year": 2024, "crossings": 24116, "pax": 241000, "cars": 123493, "pax_per_crossing": 10.0, "cars_per_crossing": 5.1 }
+  ],
+  "yearly_note": "Mellemliggende år offentliggøres ikke samlet af kommunen — søges via aktindsigt og årsberetninger. Serien her er kommunens egne tal fra færgestrategisiden.",
+  "routes_2024": {
+    "asko": { "crossings": 5452, "pax": 35000, "change_since_2007_pct": 16.1 },
+    "fejo": { "crossings": 13510, "pax": 160000, "change_since_2007_pct": 11.3 },
+    "femo": { "crossings": 5154, "pax": 46000, "change_since_2007_pct": 9.1 }
+  },
+  "economy": [
+    { "year": 2022, "expenses_mio": -37.1, "ticket_revenue_mio": 10.6, "deficit_mio": -19.6 },
+    { "year": 2023, "expenses_mio": -37.7, "ticket_revenue_mio": 7.4, "deficit_mio": -24.0 },
+    { "year": 2024, "expenses_mio": -36.6, "ticket_revenue_mio": 6.2, "deficit_mio": -21.4 }
+  ],
+  "population": { "y2007": 772, "y2025": 595, "decline_pct": 22.9,
+    "forecast_2033": { "fejo": [452, 377], "femo": [115, 103], "asko": [40, 37] } },
+  "empty_2021": { "total_departures": 26335, "empty": 2012, "evening_departures": 6170,
+    "evening_empty_pct": 15, "cost_kr": 445000,
+    "counter": "Femø-færgen ligger som beredskabsfærge i Kragenæs og skal sejle tidlige ture — morgenafgange er derfor kunstigt tomme (øboernes påpegning, TV2 ØST 13-01-2023)." },
+  "strategy_2023": {
+    "source": "Udkast til Strategi for fremtidens færgefart i Lolland Kommune, juni 2023 (høringsdokument)",
+    "effective": "2024-01-01",
+    "quotes": [
+      "Antallet af afgange reduceres - på den korte bane med ydertidspunkter med lav belægning og i weekenden, på den længere bane sejles skiftevis til Femø og Askø, hvorved antallet af afgange ca. halveres sammenlignet med i dag",
+      "Det kan således ikke lade sig gøre at reducere udgifterne i den størrelsesorden, som Økonomi- og Erhvervsudvalget har givet i opdrag, uden at antallet af afgange reduceres svarende til 15-20%",
+      "Afgange i ydertider med lav belægning reduceres med ikrafttræden pr. 1. januar 24",
+      "Beredskabsfærge nedlægges pr. 1. januar 24",
+      "Femø i dag kan besejles med op til 10 (inkl. bestillingsfærger)"
+    ]
+  },
+  "fartplan_femo": {
+    "y2021": { "valid": "30-11-2020 → 13-12-2021", "weekday_base_per_direction": 7,
+      "on_demand_layer": "F1/F2/F3-bestillingsafgange aften/nat op til 00.50 — op til ~10-11 afgange pr. retning",
+      "source": "web.archive.org snapshot 27-02-2021" },
+    "y2026": { "valid": "aktuel (bookingsystemet)", "weekday_base_per_direction": 7,
+      "on_demand_layer": "intet aften-/natlag i bookingsystemet",
+      "source": "live API, august 2026" }
+  },
+  "disruptions": [
+    { "date": "2024-05-01", "text": "M/F Askø tages ud af drift — særplan 1. og 2. maj" },
+    { "date": "2024-05-24", "text": "Nødplan for den 24. maj" },
+    { "date": "2024-05-27", "text": "Nødplan for den 27.–30. maj" },
+    { "date": "2024-11-12", "text": "Nødplan 12.–19. november" }
+  ],
+  "sources": [
+    { "name": "Lolland Færgefart: Om færgestrategien (kommunens egne årstal)", "url": "https://lollandfaergefart.lolland.dk/om-lolland-faergefart/om-faergestrategien" },
+    { "name": "Strategi-høringsdokument juni 2023 (PDF)", "url": "https://www.visitaskoe.dk/wp-content/uploads/2023/07/2023-06-Hoeringsdokument-Udkast-til-Strategi-for-fremtidens-fAergefart-i-Lolland-Kommune_tilg.pdf" },
+    { "name": "TV2 ØST 13-01-2023: 'Hver tiende færge sejlede uden passagerer'", "url": "https://www.tv2east.dk/lolland/hver-tiende-faerge-sejlede-uden-passagerer-oeboere-afviser-forslag-om-delefaerge" },
+    { "name": "Arkiverede sejlplaner (Internet Archive)", "url": "https://web.archive.org/web/2021*/lollandfaergefart.lolland.dk/sejlplaner*" }
+  ]
+}
