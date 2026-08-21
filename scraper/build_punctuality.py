@@ -33,8 +33,8 @@ BERTHS = {
 FERRY_ROUTE = {"219000809": 411, "219000811": 413, "219002177": 414}
 ROUTE_ISLAND_BERTH = {411: "femo", 413: "asko", 414: "fejo"}
 GEOFENCE_M = 300
-MIN_DOCKED_S = 300
-MATCH_EARLY_MIN, MATCH_LATE_MIN = -15, 120
+MIN_DOCKED_S = 120
+MATCH_EARLY_MIN, MATCH_LATE_MIN = -10, 60
 
 
 def dist_m(lon1, lat1, lon2, lat2):
@@ -80,16 +80,66 @@ def detect_departures(track, berths):
 
 
 def load_planned(days):
-    """Planlagte afgange (seneste kendte plan pr. departure_id) på AIS-dækkede dage."""
+    """Planlagte afgange på AIS-dækkede dage.
+
+    Direkte: seneste kendte plan pr. departure_id fra bookingarkivet (plan_source="booking").
+    Mønster: for AIS-dage FØR bookingarkivet begyndte syntetiseres planen fra den faste
+    ugedagsplan, som er observeret i arkivet (tider der optræder på >= 50 % af de
+    observerede datoer for samme rute/ugedag/overfart) — plan_source="mønster".
+    """
     plan = {}
+    all_rows = []
     for p in sorted((ROOT / "data" / "csv").glob("observations-*.csv")):
         with p.open(encoding="utf-8") as f:
             for r in csv.DictReader(f):
-                d = r["depart"][:10]
-                if d not in days:
-                    continue
-                plan[r["departure_id"]] = r
-    return list(plan.values())
+                all_rows.append(r)
+                if r["depart"][:10] in days:
+                    plan[r["departure_id"]] = r
+    direct = list(plan.values())
+    for r in direct:
+        r["plan_source"] = "booking"
+    covered = {r["depart"][:10] for r in direct}
+
+    # ugedagsmønster fra arkivet: pr. rute/ugedag vælges den observerede dato med
+    # FLEST afgange (= den ordinære køreplan; reducerede uger og fjernede afgange
+    # trækker derfor ikke mønstret skævt). Fjernede/genudgivne ids udelades.
+    removed = set()
+    try:
+        dj = json.loads((ROOT / "docs" / "data.json").read_text(encoding="utf-8"))
+        removed = {d["id"] for d in dj["departures"] if d.get("cancelled") or d.get("cancel_kind") == "replaced"}
+    except Exception:
+        pass
+    last_by_id = {}
+    for r in all_rows:
+        if r["departure_id"] in removed:
+            continue
+        last_by_id[r["departure_id"]] = r
+    per_date = defaultdict(set)   # (route, weekday, date) -> {(crossing, HH:MM)}
+    for r in last_by_id.values():
+        d = datetime.fromisoformat(r["depart"])
+        per_date[(r["ferry_route_id"], d.weekday(), r["depart"][:10])].add((r["crossing"].strip(), r["depart"][11:16]))
+    best_for = {}                 # (route, weekday) -> (count, date)
+    for (rid, wd, date), times in per_date.items():
+        cand = (len(times), date)
+        if (rid, wd) not in best_for or cand > best_for[(rid, wd)]:
+            best_for[(rid, wd)] = cand
+    pattern = {}
+    for (rid, wd), (_, date) in best_for.items():
+        pattern[(rid, wd)] = sorted(per_date[(rid, wd, date)], key=lambda t: t[1])
+
+    synthetic = []
+    for day in sorted(days):
+        if day in covered:
+            continue
+        wd = datetime.fromisoformat(day).weekday()
+        for rid in ("411", "413", "414"):
+            for crossing, hhmm in pattern.get((rid, wd), []):
+                synthetic.append({
+                    "departure_id": f"pattern-{rid}-{day}-{hhmm}-{crossing[:2]}",
+                    "ferry_route_id": rid, "crossing": crossing,
+                    "depart": f"{day}T{hhmm}:00", "plan_source": "mønster",
+                })
+    return direct + synthetic
 
 
 def main():
@@ -97,7 +147,7 @@ def main():
     if not days:
         print("Ingen AIS-filer endnu — skriver tomt punctuality.json")
         out = {"generated_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-               "days_covered": [], "departures": [], "routes": {}}
+               "days_covered": [], "departures": [], "routes": {}, "actual_by_day": []}
         (ROOT / "docs" / "punctuality.json").write_text(json.dumps(out), encoding="utf-8")
         return
 
@@ -109,29 +159,51 @@ def main():
     for v in events_by_route_berth.values():
         v.sort()
 
+    # FAKTISKE afsejlinger pr. dag pr. rute — virker uafhængigt af bookingdata
+    actual = defaultdict(list)
+    for (rid, berth), evs in events_by_route_berth.items():
+        for ts in evs:
+            local = ts.astimezone(TZ)
+            actual[(local.strftime("%Y-%m-%d"), rid)].append(
+                {"t": local.strftime("%H:%M"), "from": berth})
+    actual_by_day = [
+        {"date": k[0], "route_id": k[1], "n": len(v),
+         "sailings": sorted(v, key=lambda e: e["t"])}
+        for k, v in sorted(actual.items())
+    ]
+
     planned = load_planned(set(days))
-    results = []
-    used = set()
+    # Global nærmeste-først tildeling: alle (plan, afsejling)-par i vinduet sorteres
+    # efter |forsinkelse| og tildeles én-til-én. Undgår at en tidlig planlagt afgang
+    # "stjæler" en senere afsejling på højfrekvente ruter (Fejø).
+    plan_rows = []
     for r in planned:
         rid = int(r["ferry_route_id"])
         from_kragenaes = r["crossing"].strip().startswith("Kragenæs")
         berth = "kragenaes" if from_kragenaes else ROUTE_ISLAND_BERTH[rid]
         sched = datetime.fromisoformat(r["depart"]).replace(tzinfo=TZ).astimezone(timezone.utc)
-        cands = events_by_route_berth.get((rid, berth), [])
-        best = None
-        for i, ts in enumerate(cands):
-            if (rid, berth, i) in used:
-                continue
+        plan_rows.append((r, rid, berth, sched))
+    pairs = []
+    for pi, (r, rid, berth, sched) in enumerate(plan_rows):
+        for ei, ts in enumerate(events_by_route_berth.get((rid, berth), [])):
             dm = (ts - sched).total_seconds() / 60
-            if MATCH_EARLY_MIN <= dm <= MATCH_LATE_MIN and (best is None or abs(dm) < abs(best[1])):
-                best = (i, dm)
-        if best is not None:
-            used.add((rid, berth, best[0]))
+            if MATCH_EARLY_MIN <= dm <= MATCH_LATE_MIN:
+                pairs.append((abs(dm), dm, pi, (rid, berth, ei)))
+    pairs.sort()
+    assigned, used_ev = {}, set()
+    for _, dm, pi, ev in pairs:
+        if pi in assigned or ev in used_ev:
+            continue
+        assigned[pi] = dm
+        used_ev.add(ev)
+    results = []
+    for pi, (r, rid, berth, sched) in enumerate(plan_rows):
+        dm = assigned.get(pi)
         results.append({
             "id": r["departure_id"], "route_id": rid, "crossing": r["crossing"],
-            "depart": r["depart"],
-            "delay_min": round(best[1], 1) if best else None,
-            "status": "bekræftet" if best else "ikke bekræftet",
+            "depart": r["depart"], "plan_source": r.get("plan_source", "booking"),
+            "delay_min": round(dm, 1) if dm is not None else None,
+            "status": "bekræftet" if dm is not None else "ikke bekræftet",
         })
 
     routes = {}
@@ -153,6 +225,7 @@ def main():
         "geofence_m": GEOFENCE_M,
         "departures": sorted(results, key=lambda x: x["depart"]),
         "routes": routes,
+        "actual_by_day": actual_by_day,
     }
     (ROOT / "docs" / "punctuality.json").write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
     conf = sum(1 for x in results if x["delay_min"] is not None)
