@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-Henter AIS-spor for Lolland Færgefarts tre færger fra Søfartsstyrelsens
-åbne, historiske AIS-arkiv (https://web.ais.dk/aisdata/, dagsfiler, CC-frit).
+Henter AIS-spor for Lolland Færgefarts tre færger fra det åbne danske
+AIS-arkiv (Beredskabsstyrelsen/Søfartsstyrelsen, http://aisdata.ais.dk/ —
+S3-bucket med dagsfiler; ældre år ligger i årsmapper).
 
 Brug:  python scraper/fetch_ais.py [YYYY-MM-DD]   (standard: i går, UTC)
 
@@ -26,25 +27,28 @@ FERRIES = {
     "219002177": "christine",  # M/F Christine (Kragenæs-Fejø)
 }
 URLS = [
-    "https://web.ais.dk/aisdata/aisdk-{d}.zip",
-    "http://web.ais.dk/aisdata/aisdk-{d}.zip",
+    "http://aisdata.ais.dk/aisdk-{d}.zip",
+    "http://aisdata.ais.dk/{y}/aisdk-{d}.zip",
+    "http://aisdata.ais.dk.s3.eu-central-1.amazonaws.com/aisdk-{d}.zip",
+    "http://aisdata.ais.dk.s3.eu-central-1.amazonaws.com/{y}/aisdk-{d}.zip",
 ]
 SAMPLE_SECONDS = 30
 BACKFILL_DAYS = 7  # hent op til så mange manglende dage pr. kørsel
 
 
-def download(day: str, tmp) -> bool:
-    """Prøv alle mirrors/protokoller med retries. False hvis arkivet er nede."""
+def download(day: str, tmp) -> str:
+    """-> "ok" | "missing" (ikke publiceret endnu / findes ikke) | "down" (arkivet svarer ikke)."""
     import time
-    # web.ais.dk kører periodevis med udløbet certifikat; arkivet er offentligt.
+    import urllib.error
     ctx = ssl._create_unverified_context()
     headers = {"User-Agent": "faergedata-monitor/1.0 (AIS-punktlighed for oefaergerne; se GitHub-repo)"}
+    saw_404, saw_error = False, False
     for attempt in range(2):
         for base in URLS:
-            url = base.format(d=day)
+            url = base.format(d=day, y=day[:4])
             try:
                 req = urllib.request.Request(url, headers=headers)
-                with urllib.request.urlopen(req, timeout=45, context=ctx) as r:
+                with urllib.request.urlopen(req, timeout=60, context=ctx) as r:
                     tmp.seek(0); tmp.truncate()
                     while True:
                         chunk = r.read(1 << 20)
@@ -54,11 +58,20 @@ def download(day: str, tmp) -> bool:
                 tmp.flush()
                 if tmp.tell() > 1000:
                     print(f"  hentet {url} ({tmp.tell()/1e6:.0f} MB)", flush=True)
-                    return True
+                    return "ok"
+            except urllib.error.HTTPError as e:
+                if e.code in (403, 404):
+                    saw_404 = True
+                    continue
+                saw_error = True
+                print(f"  {url}: HTTP {e.code}", flush=True)
             except Exception as e:
+                saw_error = True
                 print(f"  {url}: {type(e).__name__}: {e}", flush=True)
+        if saw_404 and not saw_error:
+            return "missing"
         time.sleep(10)
-    return False
+    return "missing" if saw_404 and not saw_error else "down"
 
 
 def process_day(day: str) -> bool:
@@ -68,7 +81,11 @@ def process_day(day: str) -> bool:
 
     print(f"Henter AIS for {day} …", flush=True)
     with tempfile.NamedTemporaryFile(suffix=".zip", delete=True) as tmp:
-        if not download(day, tmp):
+        status = download(day, tmp)
+        if status == "missing":
+            print(f"  {day} er ikke publiceret i arkivet endnu — springer over.")
+            return None
+        if status == "down":
             print(f"  arkivet svarer ikke for {day} — springer over (hentes senere).")
             return False
         rows, last_kept, n_scanned = [], {}, 0
@@ -96,7 +113,7 @@ def process_day(day: str) -> bool:
                     last_kept[mmsi] = ts
                     rows.append([
                         ts.strftime("%Y-%m-%dT%H:%M:%SZ"), mmsi,
-                        row[i_lat], row[i_lon],
+                        row[i_lat].replace(",", "."), row[i_lon].replace(",", "."),
                         row[i_sog] if i_sog is not None else "",
                         row[i_nav] if i_nav is not None else "",
                     ])
@@ -127,12 +144,14 @@ def main() -> None:
         return
     got = 0
     for d in days:
-        if process_day(d):
+        r = process_day(d)
+        if r:
             got += 1
-        else:
+        elif r is False:
             # arkivet er nede — ingen grund til at prøve flere dage i denne kørsel
             print("Arkivet ser ud til at være nede; resten forsøges næste nat.")
             break
+        # r is None: dagen er ikke publiceret endnu — fortsæt med ældre dage
     print(f"{got} af {len(days)} dage hentet.")
 
 
