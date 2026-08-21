@@ -143,14 +143,19 @@
   .board { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
   .board.single { grid-template-columns: minmax(0, 1fr); }
   @media (max-width: 760px) { .board { grid-template-columns: minmax(0, 1fr); } }
-  .board .col { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px 6px;
+  .board .col { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px 6px; min-width: 0;
     background: linear-gradient(180deg, var(--icw), transparent 45%); }
+  .board .col .rows { max-height: 560px; overflow-y: auto; }
+  .board .col .rows::-webkit-scrollbar { width: 6px; }
+  .board .col .rows::-webkit-scrollbar-thumb { background: var(--axis); border-radius: 3px; }
+  .dep-row .pct, .dep-row .free { overflow: visible; }
+
   .board .col h3 .ferry { margin-left: auto; font-weight: 400; letter-spacing: 0; color: var(--text-muted); font-size: 11px; }
   .dep-row .pct {
     font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 11px; font-weight: 700;
     border-radius: 6px; padding: 1px 5px; min-width: 40px; text-align: center; flex-shrink: 0;
   }
-  .dep-row .free { min-width: 22px; text-align: right; font-size: 12px; }
+  .dep-row .free { min-width: 26px; text-align: right; font-size: 12px; padding-right: 2px; }
   .dep-row .tm { min-width: 46px; display: inline-flex; flex-direction: column; line-height: 1.15; }
   .dep-row .tm .daylab { font-size: 9.5px; font-weight: 500; color: var(--text-muted); letter-spacing: 0.04em; }
   .dep-row { gap: 6px; font-size: 12.5px; align-items: center; }
@@ -166,7 +171,10 @@
   .dep-row .fullbadge { background: var(--critical); color: #fff; border-radius: 6px; padding: 0 7px; font-size: 11px; font-weight: 700; }
 
   /* Færgekort + vogndæk */
-  .ferries { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+  .ferries { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  @media (max-width: 880px) { .ferries { grid-template-columns: minmax(0, 1fr); } }
+  .ferry-card { min-width: 0; }
+  .ferry-card .ferry-shape { max-width: 100%; height: auto; }
   .ferry-card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 14px; padding: 14px; }
   .ferry-card .nm { font-weight: 700; font-size: 13px; letter-spacing: 0.03em; }
   .ferry-card .sub { color: var(--text-muted); font-size: 12px; margin-bottom: 8px; }
@@ -249,8 +257,8 @@
   .heat .rowlab { background: none; color: var(--text-muted); justify-content: flex-start; white-space: nowrap; overflow: hidden; }
   .heat .collab { background: none; color: var(--text-muted); }
   details.panel > summary { cursor: pointer; font-size: 14px; font-weight: 600; letter-spacing: 0.02em; }
-  .guide { margin-top: 14px; }
-  .routemap { margin-top: 14px; }
+  .guide { margin: 0 0 14px; }
+  .routemap { margin-top: 0; }
   .livemap { margin-top: 14px; }
   .livemap iframe { width: 100%; height: 380px; border: 0; border-radius: 8px; display: block; }
   .punct-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-bottom: 12px; }
@@ -304,7 +312,7 @@
 <div class="wrap">
   <div class="topbar">
     <h1>FÆRGEDATA · SMÅLANDSFARVANDET</h1>
-    <span class="ver" title="Dashboardversion">v4.12</span>
+    <span class="ver" title="Dashboardversion">v4.13</span>
     <a href="historik.html" style="font-size:12px;align-self:center">HISTORIK →</a>
     <span class="live" id="meta">Indlæser …</span>
     <span class="live nextscrape" id="nextScrape" style="flex:0 0 auto"></span>
@@ -312,28 +320,6 @@
   </div>
   <p class="subtitle">Belægning, bookingpres og aflysninger på Lolland Kommunes færger til Femø, Askø og Fejø —
      målt direkte fra kommunens eget bookingsystem, hver 2. time, døgnet rundt.</p>
-
-  <div class="islands" id="islands"></div>
-  <div class="filters">
-    <button class="chip" id="allChip">ALLE ØER</button>
-    <select id="rangeFilter" aria-label="Periode for historik">
-      <option value="7">Sidste 7 dage</option>
-      <option value="30" selected>Sidste 30 dage</option>
-      <option value="90">Sidste 90 dage</option>
-      <option value="all">Hele perioden</option>
-    </select>
-  </div>
-
-  <details class="panel routemap" id="routeMapPanel" open>
-    <summary>RUTEKORT · Smålandsfarvandet <span class="desc">— OSM-sejlruter · prik med ring = beregnet færgeposition ud fra fartplanen</span></summary>
-    <div id="routeMap"></div>
-  </details>
-
-  <details class="panel livemap" id="livePanel">
-    <summary>LIVE · færgerne lige nu <span class="desc">— realtids-AIS (VesselFinder-kort, indlæses ved klik)</span></summary>
-    <div id="liveMap"></div>
-    <p class="desc" style="margin-top:6px">Eksternt kort fra VesselFinder. M/F Femøsund, M/F Askø og M/F Christine sejler i udsnittet mellem Kragenæs og øerne.</p>
-  </details>
 
   <details class="panel guide">
     <summary>HVAD KIGGER VI EFTER? <span class="desc">— guide til terminalen, klik for at folde ud</span></summary>
@@ -366,19 +352,38 @@
     </div>
   </details>
 
-  <div class="sectionlab">LIGE NU</div>
-  <div class="grid2 w21">
-    <div class="panel">
-      <h2>AFGANGSTAVLE · næste afgange</h2>
-      <p class="desc">Næste afgange pr. færge, begge retninger. Tag = andel af det bookbare bildæk, der er booket (hvid = ledigt · rød = presset · FULD = udsolgt).</p>
-      <div class="board" id="board"></div>
-    </div>
-    <div class="panel">
-      <h2>VOGNDÆK · næste afgang</h2>
-      <p class="desc">Hver firkant er en bilplads (estimeret kapacitet). Farvet = booket.</p>
-      <div class="ferries" id="ferries" style="grid-template-columns:1fr"></div>
-    </div>
+  <div class="islands" id="islands"></div>
+  <div class="filters">
+    <button class="chip" id="allChip">ALLE ØER</button>
+    <select id="rangeFilter" aria-label="Periode for historik">
+      <option value="7">Sidste 7 dage</option>
+      <option value="30" selected>Sidste 30 dage</option>
+      <option value="90">Sidste 90 dage</option>
+      <option value="all">Hele perioden</option>
+    </select>
   </div>
+
+  <div class="sectionlab">LIGE NU</div>
+  <div class="panel">
+    <h2>VOGNDÆK · næste afgang pr. færge</h2>
+    <p class="desc">Hver firkant er en bilplads (bookbar kapacitet). Farvet = booket. Færgens position på stregen følger fartplanen.</p>
+    <div class="ferries" id="ferries"></div>
+  </div>
+  <div class="panel">
+    <h2>AFGANGSTAVLE · dagens afgange</h2>
+    <p class="desc">Alle resterende afgange i dag pr. færge, begge retninger (morgendagens vises, når dagen er ved at være slut). Tag = andel af det bookbare bildæk, der er booket (hvid = ledigt · rød = presset · FULD = udsolgt).</p>
+    <div class="board" id="board"></div>
+  </div>
+  <details class="panel routemap" id="routeMapPanel" open>
+    <summary>RUTEKORT · hvor er færgerne nu? <span class="desc">— OSM-sejlruter · prik med ring = beregnet færgeposition ud fra fartplanen</span></summary>
+    <div id="routeMap"></div>
+  </details>
+
+  <details class="panel livemap" id="livePanel">
+    <summary>LIVE · færgerne lige nu <span class="desc">— realtids-AIS (VesselFinder-kort, indlæses ved klik)</span></summary>
+    <div id="liveMap"></div>
+    <p class="desc" style="margin-top:6px">Eksternt kort fra VesselFinder. M/F Femøsund, M/F Askø og M/F Christine sejler i udsnittet mellem Kragenæs og øerne.</p>
+  </details>
 
   <div class="sectionlab">PRES</div>
   <div class="panel">
@@ -658,9 +663,15 @@ function renderBoard() {
     const fname = document.createElement("span"); fname.className = "ferry"; fname.textContent = isl.ferry;
     h.append(dot, document.createTextNode(isl.name), fname);
     col.append(h);
-    const next = byIsland(isl.id).filter(d => !d.sailed && new Date(d.depart) > now)
-      .sort((a, b) => a.depart.localeCompare(b.depart)).slice(0, selIsland === "all" ? 5 : 10);
-    if (!next.length) { const e = document.createElement("div"); e.className = "empty-note"; e.textContent = "Ingen kommende afgange."; col.append(e); return col; }
+    const todayKey = new Date(now - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    const tomorrowKey = new Date(now + 864e5 - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    const upcoming = byIsland(isl.id).filter(d => !d.sailed && new Date(d.depart) > now)
+      .sort((a, b) => a.depart.localeCompare(b.depart));
+    let next = upcoming.filter(d => d.depart.slice(0, 10) === todayKey);
+    if (next.length < 3) next = next.concat(upcoming.filter(d => d.depart.slice(0, 10) === tomorrowKey));
+    const rowsWrap = document.createElement("div"); rowsWrap.className = "rows";
+    col.append(rowsWrap);
+    if (!next.length) { const e = document.createElement("div"); e.className = "empty-note"; e.textContent = "Ingen flere afgange i dag."; rowsWrap.append(e); return col; }
     for (const d of next) {
       const row = document.createElement("div"); row.className = "dep-row";
       const tm = document.createElement("span"); tm.className = "tm";
@@ -692,7 +703,7 @@ function renderBoard() {
       fr.title = "Ledige bilpladser";
       fr.textContent = d.soldout_cars ? "0" : String(d.final_avail_cars);
       row.append(fr);
-      col.append(row);
+      rowsWrap.append(row);
     }
     return col;
   }));
