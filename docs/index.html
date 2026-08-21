@@ -65,7 +65,10 @@
     align-self: center; flex-shrink: 0;
   }
   .topbar .live { color: var(--text-muted); font-size: 12px; flex: 1 1 240px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  #nextScrape { white-space: nowrap; }
+  #nextScrape { white-space: nowrap; font-variant-numeric: tabular-nums; min-width: 21ch; text-align: right; flex: 0 0 auto; }
+  .topbar { min-height: 54px; align-items: center; }
+  .topbar .live { min-width: 0; }
+  .ferry-card .cd .cd-dep, #nextScrape span { display: inline-block; min-width: 7ch; }
   .topbar .live .livedot {
     display: inline-block; width: 7px; height: 7px; border-radius: 50%;
     background: var(--fejo); margin-right: 6px; vertical-align: 1px;
@@ -214,6 +217,7 @@
   }
   .ferry-specs b { color: var(--text-secondary); font-weight: 600; }
   .ferry-card .cd {
+    min-height: 44px;
     font-family: var(--mono); font-variant-numeric: tabular-nums;
     font-size: 17px; font-weight: 600; letter-spacing: 0.02em; margin: 2px 0 6px;
     color: var(--text-primary);
@@ -319,7 +323,7 @@
 <div class="wrap">
   <div class="topbar">
     <h1>FÆRGEDATA · SMÅLANDSFARVANDET</h1>
-    <span class="ver" title="Dashboardversion">v4.15</span>
+    <span class="ver" title="Dashboardversion">v4.16</span>
     <a href="historik.html" style="font-size:12px;align-self:center">HISTORIK →</a>
     <span class="live" id="meta">Indlæser …</span>
     <span class="live nextscrape" id="nextScrape" style="flex:0 0 auto"></span>
@@ -963,7 +967,7 @@ function fmtCountdown(ms) {
         h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60), ss = s % 60;
   if (d > 0) return `${d} d ${h} t`;
   if (h > 0) return `${h} t ${String(m).padStart(2,"0")} m`;
-  return `${m}:${String(ss).padStart(2,"0")}`;
+  return `${String(m).padStart(2,"0")}:${String(ss).padStart(2,"0")}`;
 }
 function nextScrapeUtc() {
   // GitHub-cron kører kl. :07 hver anden (lige) UTC-time — kan være forsinket
@@ -995,7 +999,20 @@ setInterval(() => {
   });
   updateMapFerries();
 }, 5000);
-setInterval(() => { if (DATA) renderFerries(); }, 30000);
+let _ferrySig = "";
+function ferrySignature() {
+  return ISLANDS.map(isl => {
+    const st = ferryState(isl.id);
+    const next = byIsland(isl.id).filter(d => !d.sailed && new Date(d.depart) > Date.now())
+      .sort((a, b) => a.depart.localeCompare(b.depart))[0];
+    return `${isl.key}:${st.state}:${st.crossing || ""}:${next ? next.id + ":" + next.final_avail_cars : ""}`;
+  }).join("|");
+}
+setInterval(() => {
+  if (!DATA) return;
+  const sig = ferrySignature();
+  if (sig !== _ferrySig) { _ferrySig = sig; renderFerries(); }
+}, 30000);
 
 /* ---------- vogndæk ---------- */
 function renderFerries() {
@@ -1595,6 +1612,7 @@ function renderTable() {
   tbl.replaceChildren(thead, tbody);
 }
 function render() {
+  _ferrySig = DATA ? ferrySignature() : "";
   renderIslands(); renderRouteMap(); renderBoard(); renderFerries(); renderForward(); renderPunctuality();
   renderAlerts(); renderCancels(); renderSupply(); renderHeat(); renderAggCurve();
   renderCurvePanel(); renderLead(); renderSlot(); renderHistory();
