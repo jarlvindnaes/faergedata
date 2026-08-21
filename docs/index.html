@@ -319,7 +319,7 @@
 <div class="wrap">
   <div class="topbar">
     <h1>FÆRGEDATA · SMÅLANDSFARVANDET</h1>
-    <span class="ver" title="Dashboardversion">v4.14</span>
+    <span class="ver" title="Dashboardversion">v4.15</span>
     <a href="historik.html" style="font-size:12px;align-self:center">HISTORIK →</a>
     <span class="live" id="meta">Indlæser …</span>
     <span class="live nextscrape" id="nextScrape" style="flex:0 0 auto"></span>
@@ -521,17 +521,19 @@ const FERRY_FACTS = {
   femo: { built: 1996, imo: "9129782", mmsi: "219000809", gt: 337, loa: "35,8", beam: "10,7",
           draught: "2,2", knots: 10, pax: 98, cars: 18, yard: "Assens Skibsværft" },
   asko: { built: 1993, imo: "9082635", mmsi: "219000811", gt: 202, loa: "33,5", beam: "10,4",
-          draught: "2,2", knots: 10, pax: 98, cars: "14 + lastbil", yard: "Søby Værft (katamaran)" },
+          draught: "2,2", knots: 10, pax: 98, cars: "15 enh. (14 + lastbil)", yard: "Søby Værft (katamaran)" },
   fejo: { built: 2002, imo: "9257632", mmsi: "219002177", gt: 491, loa: "42,0", beam: "13,0",
           draught: "2,5", knots: 10, pax: 147, cars: 30, yard: "Søby Værft" },
 };
 /* Skitserede dækplaner (ikke målfaste): baner og pladser efter officiel kapacitet,
    skrogproportioner efter længde/bredde. Dobbeltendede færger: rampe i begge ender. */
+/* rows = bilpladser pr. kørebane (én plads = ca. 5 m bil; lastbiler optager flere pladser) */
 const FERRY_DECK = {
-  femo: { L: 35.8, B: 10.7, lanes: 3, perLane: 6, official: 18 },
-  asko: { L: 33.5, B: 10.4, lanes: 2, perLane: 7, official: 14, truck: true, catamaran: true },
-  fejo: { L: 42.0, B: 13.0, lanes: 3, perLane: 10, official: 30 },
+  femo: { L: 35.8, B: 10.7, rows: [6, 6, 6], official: 18 },
+  asko: { L: 33.5, B: 10.4, rows: [8, 7], official: 15, catamaran: true },
+  fejo: { L: 42.0, B: 13.0, rows: [8, 8, 8, 6], official: 30 },
 };
+const CAR_M = 5;
 function deckPlanSVG(isl, bookableCap, free) {
   const cfg = FERRY_DECK[isl.key]; if (!cfg) return "";
   const color = iColor(isl), axis = cssVar("--axis"), surface = cssVar("--surface-1"),
@@ -540,7 +542,7 @@ function deckPlanSVG(isl, bookableCap, free) {
   const pad = 10, H = Hd + pad * 2;
   const ramp = 16, x0 = pad + ramp, x1 = W + pad - ramp;        // dækkets udstrækning
   const y0 = pad, y1 = pad + Hd;
-  const totalSlots = cfg.lanes * cfg.perLane + (cfg.truck ? 1 : 0);
+  const totalSlots = cfg.rows.reduce((a, b) => a + b, 0);
   const booked = Math.max(0, Math.min(bookableCap, bookableCap - free));
   const nonBookable = Math.max(0, totalSlots - bookableCap);
   /* skrog: dobbeltendet med skrå ramper, let buede sider */
@@ -559,33 +561,24 @@ function deckPlanSVG(isl, bookableCap, free) {
   /* ramper i begge ender */
   svg += `<path d="M${pad + 2},${y0 + 8} L${x0},${y0 + 14} L${x0},${y1 - 14} L${pad + 2},${y1 - 8} Z" fill="${grid}" opacity="0.8"/>
           <path d="M${W + pad - 2},${y0 + 8} L${x1},${y0 + 14} L${x1},${y1 - 14} L${W + pad - 2},${y1 - 8} Z" fill="${grid}" opacity="0.8"/>`;
-  /* kørebaner */
-  const laneRows = cfg.lanes + (cfg.truck ? 1 : 0);
+  /* kørebaner: pladser på 5 m, centreret på dækket */
+  const laneRows = cfg.rows.length;
   const laneH = (y1 - y0 - 12) / laneRows;
-  const slotW = (x1 - x0 - 8) / cfg.perLane;
-  let idx = 0;  // pladsnummer, fyldes fra den ene ende
+  const slotW = Math.min(CAR_M * scale, (x1 - x0 - 8) / Math.max(...cfg.rows));
   const slots = [];
   for (let r = 0; r < laneRows; r++) {
-    const isTruck = cfg.truck && r === Math.floor(laneRows / 2);
-    const ly = y0 + 6 + r * laneH;
-    if (isTruck) {
-      slots.push({ x: x0 + 4, y: ly + 2, w: (x1 - x0 - 8), h: laneH - 4, truck: true });
-      continue;
-    }
-    for (let c = 0; c < cfg.perLane; c++) {
-      slots.push({ x: x0 + 4 + c * slotW + 1.5, y: ly + 2, w: slotW - 3, h: laneH - 4 });
-    }
+    const n = cfg.rows[r], ly = y0 + 6 + r * laneH;
+    const blockW = n * slotW, startX = (x0 + x1) / 2 - blockW / 2;
+    for (let c = 0; c < n; c++)
+      slots.push({ x: startX + c * slotW + 1.5, y: ly + 2, w: slotW - 3, h: laneH - 4 });
   }
   /* fyld: bookede først (fra den ene ende), så ledige, og til sidst de ikke-bookbare (reserverede) */
-  const carSlots = slots.filter(s => !s.truck), truckSlot = slots.find(s => s.truck);
-  const order = [...carSlots]; if (truckSlot) order.push(truckSlot);
-  order.forEach((sl, i) => {
+  slots.forEach((sl, i) => {
     let fill = "none", stroke = axis, dash = "";
     if (i < booked) { fill = color; stroke = color; }
     else if (i >= totalSlots - nonBookable) { fill = `url(#hatch-${isl.key})`; stroke = grid; }
     else { fill = "none"; stroke = color; dash = ` stroke-dasharray="2.5 2"`; }
     svg += `<rect x="${sl.x.toFixed(1)}" y="${sl.y.toFixed(1)}" width="${sl.w.toFixed(1)}" height="${sl.h.toFixed(1)}" rx="2.5" fill="${fill}" stroke="${stroke}" stroke-width="1.2"${dash} opacity="${i < booked ? 0.95 : 0.9}"/>`;
-    if (sl.truck) svg += `<text x="${(sl.x + sl.w / 2).toFixed(1)}" y="${(sl.y + sl.h / 2 + 3).toFixed(1)}" text-anchor="middle" font-size="8" fill="${i < booked ? "#fff" : muted}" letter-spacing="0.12em">LASTBIL</text>`;
   });
   /* styrehus langs siden + navn */
   svg += `<rect x="${(x0 + x1) / 2 - 18}" y="${y0 - 4}" width="36" height="7" rx="2" fill="${color}" opacity="0.85"/>`;
@@ -1045,7 +1038,7 @@ function renderFerries() {
       const cfg = FERRY_DECK[isl.key];
       if (cfg) {
         const cap = document.createElement("div"); cap.className = "deckcap";
-        cap.textContent = `${isl.ferry.toUpperCase()} · ${String(cfg.L).replace(".", ",")} × ${String(cfg.B).replace(".", ",")} m · skitseret dækplan, ikke målfast`;
+        cap.textContent = `${isl.ferry.toUpperCase()} · ${String(cfg.L).replace(".", ",")} × ${String(cfg.B).replace(".", ",")} m · ${cfg.rows.length} baner · én plads = 5 m bil (lastbiler optager flere) · skitse`;
         deck.append(cap);
       }
       const lab = document.createElement("div"); lab.className = "decklab";
