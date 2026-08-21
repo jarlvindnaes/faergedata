@@ -208,6 +208,7 @@
   #alerts .alert-row:last-child, #cancels .alert-row:last-child { border-bottom: none; }
   .badge { background: var(--critical); color: #fff; border-radius: 6px; padding: 1px 7px; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; flex-shrink: 0; box-shadow: 0 0 0 1px rgba(0,0,0,.06); }
   .badge.warn { background: var(--warning); color: #0b0b0b; }
+  .badge.plan { background: var(--axis); color: var(--text-primary); }
   .when { color: var(--text-secondary); }
   .lead { color: var(--text-muted); font-size: 12px; margin-left: auto; flex-shrink: 0; }
 
@@ -289,7 +290,7 @@
 <div class="wrap">
   <div class="topbar">
     <h1>FÆRGEDATA · SMÅLANDSFARVANDET</h1>
-    <span class="ver" title="Dashboardversion">v4.10</span>
+    <span class="ver" title="Dashboardversion">v4.11</span>
     <a href="historik.html" style="font-size:12px;align-self:center">HISTORIK →</a>
     <span class="live" id="meta">Indlæser …</span>
     <span class="live nextscrape" id="nextScrape" style="flex:0 0 auto"></span>
@@ -380,9 +381,19 @@
     </div>
     <div class="panel">
       <h2>⛔ AFLYSNINGS-RADAR</h2>
-      <p class="desc">Afgange der er fjernet fra bookingsystemet FØR deres afgangstid — med varslet i timer. Under 24 timers varsel markeres rødt.</p>
+      <p class="desc">Afgange fjernet fra bookingsystemet FØR afgangstid. <b>AFLYST</b> = var bookbar da den
+      forsvandt (folk kan have haft billet) · <b>LUKKET</b> = først sat til "Ikke åbnet for booking", så fjernet ·
+      <b>PLAN</b> = aldrig åben for booking. Varsel = tid fra fjernelse til afgang. Under 24 timer fremhæves enkeltvis.</p>
       <div id="cancels"></div>
     </div>
+  </div>
+  <div class="panel">
+    <h2>UDBUD · afgange pr. dag i køreplanen</h2>
+    <p class="desc">Antal afgange i den gældende køreplan pr. dag (begge retninger). Et dyk = servicereduktion.
+    Ugen 23.–30. august 2026: M/F Askø sendes til Bandholm, M/F Femøsund dækker både Femø og Askø, og
+    Femø går fra 7 til 4–5 daglige afgange pr. retning. Genudgivne afgange (nyt id, samme tid) tælles kun én gang.</p>
+    <div id="supplyChart"></div>
+    <div class="legend" id="supplyLegend"></div>
   </div>
   <div class="panel">
     <h2>PRES-MATRIX · ledige bilpladser pr. afgang, 14 dage frem</h2>
@@ -1094,26 +1105,69 @@ function renderAlerts() {
 function renderCancels() {
   const el = $("#cancels");
   const cx = DATA.departures.filter(d =>
-    d.cancelled && (selIsland === "all" || d.route_id === Number(selIsland)))
-    .sort((a, b) => b.depart.localeCompare(a.depart)).slice(0, 15);
+    d.cancelled && (selIsland === "all" || d.route_id === Number(selIsland)));
   if (!cx.length) {
     el.textContent = "Ingen aflysninger fanget endnu. Radaren tjekker hver 2. time om offentliggjorte afgange forsvinder før tid.";
     el.classList.add("empty-note"); return;
   }
   el.classList.remove("empty-note");
-  el.replaceChildren(...cx.map(d => {
+  const rows = [];
+  const mkBadge = (cls, txt) => { const b = document.createElement("span"); b.className = "badge " + cls; b.textContent = txt; return b; };
+  /* Kort-varsel-aflysninger (<24 t) af bookbare afgange vises altid enkeltvis — det er alarmen. */
+  const urgent = cx.filter(d => d.cancel_kind === "aflysning" &&
+    d.cancel_notice_hours !== null && d.cancel_notice_hours < 24)
+    .sort((a, b) => b.depart.localeCompare(a.depart));
+  for (const d of urgent.slice(0, 10)) {
     const row = document.createElement("div"); row.className = "alert-row";
-    const short = d.cancel_notice_hours !== null && d.cancel_notice_hours < 24;
-    const b = document.createElement("span"); b.className = "badge" + (short ? "" : " warn");
-    b.textContent = "AFLYST";
     const w = document.createElement("span"); w.className = "when"; w.textContent = fmtDT(d.depart);
     const c = document.createElement("span"); c.textContent = d.crossing;
     const lead = document.createElement("span"); lead.className = "lead";
-    lead.textContent = d.cancel_notice_hours === null ? "" :
-      (short ? `⚠ kun ${Math.round(d.cancel_notice_hours)} timers varsel` : `${Math.round(d.cancel_notice_hours / 24)} dages varsel`);
-    if (short) { lead.style.color = cssVar("--critical"); lead.style.fontWeight = "600"; }
-    row.append(b, w, c, lead); return row;
-  }));
+    lead.textContent = `⚠ kun ${Math.round(d.cancel_notice_hours)} timers varsel`;
+    lead.style.color = cssVar("--critical"); lead.style.fontWeight = "600";
+    row.append(mkBadge("", "AFLYST"), w, c, lead); rows.push(row);
+  }
+  /* Øvrige grupperes pr. dato: én linje pr. dag med antal pr. type og typisk varsel. */
+  const byDate = new Map();
+  for (const d of cx) {
+    if (urgent.includes(d)) continue;
+    const day = d.depart.slice(0, 10);
+    if (!byDate.has(day)) byDate.set(day, { afl: 0, luk: 0, plan: 0, notices: [] });
+    const g = byDate.get(day);
+    if (d.cancel_kind === "aflysning") g.afl++;
+    else if (d.cancel_kind === "lukket") g.luk++;
+    else g.plan++;
+    if (d.cancel_notice_hours !== null) g.notices.push(d.cancel_notice_hours);
+  }
+  for (const [day, g] of [...byDate.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    const row = document.createElement("div"); row.className = "alert-row";
+    if (g.afl) row.append(mkBadge("", "AFLYST"));
+    if (g.luk) row.append(mkBadge("warn", "LUKKET"));
+    if (g.plan) row.append(mkBadge("plan", "PLAN"));
+    const w = document.createElement("span"); w.className = "when"; w.textContent = fmtDate(day);
+    const c = document.createElement("span");
+    const parts = [];
+    if (g.afl) parts.push(`${g.afl} bookbare afgange fjernet`);
+    if (g.luk) parts.push(`${g.luk} lukket og fjernet`);
+    if (g.plan) parts.push(`${g.plan} aldrig åbnet`);
+    c.textContent = parts.join(" · ");
+    const lead = document.createElement("span"); lead.className = "lead";
+    if (g.notices.length) {
+      const med = g.notices.sort((a, b) => a - b)[Math.floor(g.notices.length / 2)];
+      lead.textContent = med >= 48 ? `varsel ~${Math.round(med / 24)} døgn` : `varsel ~${Math.round(med)} timer`;
+    }
+    row.append(w, c, lead); rows.push(row);
+  }
+  el.replaceChildren(...rows);
+}
+function renderSupply() {
+  const el = $("#supplyChart");
+  const sup = DATA.supply || [];
+  const series = activeIslands().map(isl => ({
+    name: isl.name, color: iColor(isl),
+    points: sup.filter(s => s.route_id === isl.id).map(s => ({ x: s.date, v: s.n })),
+  })).filter(s => s.points.length);
+  lineChart(el, series, { aria: "Antal afgange i køreplanen pr. dag", empty: "Udbudshistorikken opbygges dag for dag.", h: 200 });
+  legendFor($("#supplyLegend"), series);
 }
 function renderHeat() {
   const el = $("#heatWrap");
@@ -1412,7 +1466,7 @@ function renderTable() {
 }
 function render() {
   renderIslands(); renderRouteMap(); renderBoard(); renderFerries(); renderForward(); renderPunctuality();
-  renderAlerts(); renderCancels(); renderHeat(); renderAggCurve();
+  renderAlerts(); renderCancels(); renderSupply(); renderHeat(); renderAggCurve();
   renderCurvePanel(); renderLead(); renderSlot(); renderHistory();
   renderFingerprint(); renderTable();
 }

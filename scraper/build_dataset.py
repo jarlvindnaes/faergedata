@@ -138,6 +138,12 @@ def main():
     for rid, m in seen_max.items():
         cap.setdefault(rid, m)
 
+    # slot-indeks til genudgivelses-detektion: samme rute+overfart+afgangstid under nyt id
+    slot_index = defaultdict(list)
+    for dep_id, obs in by_dep.items():
+        key = (obs[-1]["ferry_route_id"], obs[-1]["crossing"], obs[-1]["depart"])
+        slot_index[key].append((dep_id, obs[0]["snapshot_dt"], obs[-1]["snapshot_dt"]))
+
     departures = []
     curves = {}
     for dep_id, obs in by_dep.items():
@@ -161,6 +167,29 @@ def main():
         detected = later_snaps[0] if cancelled else None
         notice_h = round((depart_utc - detected).total_seconds() / 3600, 1) if detected else None
 
+        # KLASSIFIKATION af forsvundne afgange (ærlighed frem for alt):
+        #  replaced     – samme slot genudgivet under nyt id efter dette forsvandt -> ikke en aflysning
+        #  planaendring – afgangen var ALDRIG åben for booking (skelet-slot) -> planændring
+        #  lukket       – afgangen HAR været bookbar, blev sat til "Ikke åbnet for booking"
+        #                 og derefter fjernet (lukket-så-fjernet)
+        #  aflysning    – afgangen var bookbar da den forsvandt -> folk kan have haft billet
+        bookable_css = {"crossing-normal", "crossing-almost-fully-booked"}
+        never_open = not any(o["css_class"] in bookable_css for o in obs)
+        cancel_kind = None
+        if cancelled:
+            key = (last["ferry_route_id"], last["crossing"], last["depart"])
+            replaced = any(other_id != dep_id and first_seen > last_seen
+                           for other_id, first_seen, _ in slot_index[key])
+            if replaced:
+                cancel_kind = "replaced"
+                cancelled, detected, notice_h = False, None, None
+            elif never_open:
+                cancel_kind = "planaendring"
+            elif last["css_class"] not in bookable_css:
+                cancel_kind = "lukket"
+            else:
+                cancel_kind = "aflysning"
+
         departures.append({
             "id": dep_id,
             "route_id": int(last["ferry_route_id"]),
@@ -183,6 +212,8 @@ def main():
             "n_obs": len(obs),
             "final_obs_utc": final["snapshot_utc"],
             "cancelled": cancelled,
+            "cancel_kind": cancel_kind,
+            "never_open": never_open,
             "cancel_detected_utc": detected.strftime("%Y-%m-%dT%H:%M:%SZ") if detected else None,
             "cancel_notice_hours": notice_h,
         })
@@ -229,6 +260,14 @@ def main():
         for rid, buckets in agg.items()
     }
 
+    # UDBUD: afgange pr. dag pr. rute i den gældende plan (forsvundne/genudgivne talt korrekt)
+    sup = defaultdict(int)
+    for d in departures:
+        if d["cancelled"] or d["cancel_kind"] == "replaced":
+            continue
+        sup[(d["depart"][:10], d["route_id"])] += 1
+    supply = [{"date": k[0], "route_id": k[1], "n": v} for k, v in sorted(sup.items())]
+
     out = {
         "generated_utc": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "n_observations": len(rows),
@@ -240,6 +279,7 @@ def main():
         "daily": daily_list,
         "curves": curves,
         "agg_curves": agg_curves,
+        "supply": supply,
     }
     out_path = ROOT / "docs" / "data.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
