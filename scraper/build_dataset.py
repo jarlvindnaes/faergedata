@@ -21,9 +21,29 @@ TZ = ZoneInfo("Europe/Copenhagen")
 # Hvis ikke angivet estimeres den som største observerede antal ledige
 # bilpladser på ruten (en nedre grænse for den reelle kapacitet).
 CAR_CAPACITY_OVERRIDE = {
-    # 411: 18,  # Kragenæs-Femø, M/F Femøsund
+    # 411: 18,  # (rute-fallback) Kragenæs-Femø
+}
+# Bookbar kapacitet PR. FÆRGE (enheder). Tom = estimeres som største observerede
+# antal ledige pladser for netop den færge (nedre grænse). Kapaciteten følger den
+# færge, der er indsat på afgangen — ikke ruten — så skibsbytter (fx M/F Christine
+# på en ekstra Femø-afgang) ikke forvrænger belægningen for de øvrige afgange.
+FERRY_CAPACITY_OVERRIDE = {
+    # "M/F Femøsund": 15, "M/F Askø": 13, "M/F Christine": 24,
 }
 ROUTE_NAMES = {411: "Kragenæs–Femø", 413: "Kragenæs–Askø", 414: "Kragenæs–Fejø"}
+ROUTE_HOME_FERRY = {411: "M/F Femøsund", 413: "M/F Askø", 414: "M/F Christine"}
+
+
+def ferry_name(note: str):
+    """Normaliser bookingsystemets note til færgenavn (None hvis noten ikke er en færge)."""
+    n = (note or "").lower()
+    if "femøsund" in n or "femosund" in n:
+        return "M/F Femøsund"
+    if "askø" in n or "askoe" in n:
+        return "M/F Askø"
+    if "christine" in n:
+        return "M/F Christine"
+    return None
 
 CSV_FIELDS = [
     "snapshot_utc", "service_date", "ferry_route_id", "crossing",
@@ -129,14 +149,19 @@ def main():
     # globalt sorteret liste af snapshots (til aflysningsdetektion)
     all_snaps = sorted({r["snapshot_dt"] for r in rows})
 
-    # bilkapacitet pr. rute: override eller max observerede ledige pladser
-    cap = dict(CAR_CAPACITY_OVERRIDE)
-    seen_max = defaultdict(int)
+    # bilkapacitet PR. FÆRGE: override eller max observerede ledige pladser for den færge
+    ferry_caps = dict(FERRY_CAPACITY_OVERRIDE)
+    seen_ferry_max = defaultdict(int)
     for r in rows:
-        rid = int(r["ferry_route_id"])
-        seen_max[rid] = max(seen_max[rid], r["available_cars"])
-    for rid, m in seen_max.items():
-        cap.setdefault(rid, m)
+        fn = ferry_name(r["ferry"])
+        if fn:
+            seen_ferry_max[fn] = max(seen_ferry_max[fn], r["available_cars"])
+    for fn, m in seen_ferry_max.items():
+        ferry_caps.setdefault(fn, m)
+    # rute-fallback (når ingen observation navngiver færgen): hjemmefærgens kapacitet
+    cap = dict(CAR_CAPACITY_OVERRIDE)
+    for rid, home in ROUTE_HOME_FERRY.items():
+        cap.setdefault(rid, ferry_caps.get(home, 0))
 
     # slot-indeks til genudgivelses-detektion: samme rute+overfart+afgangstid under nyt id
     slot_index = defaultdict(list)
@@ -152,7 +177,10 @@ def main():
         sailed = depart_utc < now
         pre = [o for o in obs if o["snapshot_dt"] <= depart_utc]
         final = pre[-1] if pre else last
-        ferry_cap = cap.get(int(last["ferry_route_id"]), 0) or 0
+        # færgen på afgangen = seneste observation med et genkendeligt færgenavn
+        dep_ferry = next((ferry_name(o["ferry"]) for o in reversed(obs) if ferry_name(o["ferry"])), None)
+        ferry_cap_dep = ferry_caps.get(dep_ferry) if dep_ferry else None
+        ferry_cap = (ferry_cap_dep if ferry_cap_dep else cap.get(int(last["ferry_route_id"]), 0)) or 0
         soldout_obs = next((o for o in obs if o["available_cars"] == 0), None)
 
         # AFLYSNINGS-RADAR: afgangen er forsvundet fra bookingsystemet FØR sin
@@ -197,6 +225,8 @@ def main():
             "depart": last["depart"],
             "arrival": last["arrival"],
             "ferry": last["ferry"],
+            "ferry_name": dep_ferry or ROUTE_HOME_FERRY.get(int(last["ferry_route_id"])),
+            "ferry_substituted": bool(dep_ferry) and dep_ferry != ROUTE_HOME_FERRY.get(int(last["ferry_route_id"])),
             "sailed": sailed,
             "final_avail_cars": final["available_cars"],
             "final_avail_pax": final["available_pax"],
@@ -274,6 +304,7 @@ def main():
         "n_departures": len(departures),
         "first_snapshot": min((r["snapshot_utc"] for r in rows), default=None),
         "car_capacity_est": {ROUTE_NAMES.get(k, str(k)): v for k, v in cap.items()},
+        "ferry_capacity_est": ferry_caps,
         "route_names": ROUTE_NAMES,
         "departures": departures,
         "daily": daily_list,

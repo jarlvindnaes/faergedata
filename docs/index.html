@@ -211,6 +211,7 @@
   @media (prefers-reduced-motion: reduce) {
     .ferry-shape .hull-grp, .ferry-shape .waves { animation: none !important; }
   }
+  .ferry-card .nm .subst { font-weight: 400; font-size: 11px; color: var(--warning); margin-left: 6px; letter-spacing: 0; }
   .ferry-specs {
     font-family: var(--mono); font-size: 10.5px; color: var(--text-muted);
     margin: 6px 0 2px; line-height: 1.6; letter-spacing: 0.01em;
@@ -323,7 +324,7 @@
 <div class="wrap">
   <div class="topbar">
     <h1>FÆRGEDATA · SMÅLANDSFARVANDET</h1>
-    <span class="ver" title="Dashboardversion">v4.16</span>
+    <span class="ver" title="Dashboardversion">v4.17</span>
     <a href="historik.html" style="font-size:12px;align-self:center">HISTORIK →</a>
     <span class="live" id="meta">Indlæser …</span>
     <span class="live nextscrape" id="nextScrape" style="flex:0 0 auto"></span>
@@ -377,12 +378,12 @@
   <div class="sectionlab">LIGE NU</div>
   <div class="panel">
     <h2>VOGNDÆK · næste afgang pr. færge</h2>
-    <p class="desc">Hver firkant er en bilplads (bookbar kapacitet). Farvet = booket. Færgens position på stregen følger fartplanen.</p>
+    <p class="desc">Hver plads er én bookingenhed (ca. 5 m). Farvet = reserveret i bookingsystemet. Kapaciteten følger den færge, der er indsat på afgangen. Reservationer er ikke det samme som biler på dækket — se metode nederst.</p>
     <div class="ferries" id="ferries"></div>
   </div>
   <div class="panel">
     <h2>AFGANGSTAVLE · dagens afgange</h2>
-    <p class="desc">Alle resterende afgange i dag pr. færge, begge retninger (morgendagens vises, når dagen er ved at være slut). Tag = andel af det bookbare bildæk, der er booket (hvid = ledigt · rød = presset · FULD = udsolgt).</p>
+    <p class="desc">Alle resterende afgange i dag pr. færge, begge retninger (morgendagens vises, når dagen er ved at være slut). Tag = andel af de bookbare enheder, der er reserveret (hvid = ledigt · rød = presset · FULD = udsolgt).</p>
     <div class="board" id="board"></div>
   </div>
   <details class="panel routemap" id="routeMapPanel" open>
@@ -497,9 +498,13 @@
 
   <footer>
     Datakilde: <a href="https://lolland-ferry.teambooking.dk/timetable">Lolland Færgefarts offentlige bookingsystem</a>.
-    Skibsdata: Færgelejet.dk/Søfartsstyrelsen. Bemærk at bookingsystemets bookbare bilkapacitet
-    (maks. observeret 15/15/24 pladser) er lavere end færgernes officielle kapacitet (18/15/30) —
-    belægning beregnes konservativt ud fra det bookbare antal.
+    Skibsdata: Færgelejet.dk/Søfartsstyrelsen.
+    <b>Metode, enheder og kapacitet:</b> tallene er <i>bookingenheder</i> — ikke biler på dækket. En varevogn
+    eller trailer tæller som flere enheder, og udeblivelser eller sene afbud indgår ikke; "reserveret" betyder
+    derfor efterspørgsel efter bookbar kapacitet. Kapaciteten estimeres <i>pr. færge</i> som det største
+    observerede antal ledige enheder (Femøsund ~15, Askø ~13, Christine ~24 — nedre grænser) og følger den
+    færge, der er indsat på den enkelte afgang, så skibsbytter ikke forvrænger tallene. Færgernes officielle
+    kapacitet er højere (18 / 14+lastbil / 30); belægning beregnes konservativt ud fra det bookbare antal.
     Ø-silhuetter: © OpenStreetMap-bidragydere. Bilkapacitet pr. rute er estimeret som største observerede
     antal ledige pladser (en nedre grænse) — belægningsprocenter er derfor konservative. Alle rå målinger
     ligger tidsstemplet i git-historikken og kan efterprøves af enhver.
@@ -538,8 +543,10 @@ const FERRY_DECK = {
   fejo: { L: 42.0, B: 13.0, rows: [8, 8, 8, 6], official: 30 },
 };
 const CAR_M = 5;
-function deckPlanSVG(isl, bookableCap, free) {
-  const cfg = FERRY_DECK[isl.key]; if (!cfg) return "";
+const FERRY_KEY = { "M/F Femøsund": "femo", "M/F Askø": "asko", "M/F Christine": "fejo" };
+const ferryKeyOf = d => FERRY_KEY[d && d.ferry_name] || null;
+function deckPlanSVG(isl, bookableCap, free, deckKey) {
+  const cfg = FERRY_DECK[deckKey || isl.key]; if (!cfg) return "";
   const color = iColor(isl), axis = cssVar("--axis"), surface = cssVar("--surface-1"),
         muted = cssVar("--text-muted"), grid = cssVar("--grid");
   const scale = 7.2, W = Math.round(cfg.L * scale), Hd = Math.round(cfg.B * scale);
@@ -553,8 +560,8 @@ function deckPlanSVG(isl, bookableCap, free) {
   const hull = `M${pad},${y0 + 6} Q${pad},${y0} ${pad + 6},${y0} L${W + pad - 6},${y0} Q${W + pad},${y0} ${W + pad},${y0 + 6}
     L${W + pad},${y1 - 6} Q${W + pad},${y1} ${W + pad - 6},${y1} L${pad + 6},${y1} Q${pad},${y1} ${pad},${y1 - 6} Z`;
   let svg = `<svg viewBox="0 0 ${W + pad * 2} ${H}" class="deckplan" role="img"
-      aria-label="Skitseret dækplan for ${isl.ferry}: ${booked} af ${bookableCap} bookbare pladser booket">`;
-  svg += `<defs><pattern id="hatch-${isl.key}" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      aria-label="Skitseret dækplan: ${booked} af ${bookableCap} bookbare enheder reserveret">`;
+  svg += `<defs><pattern id="hatch-${isl.key}-${deckKey || isl.key}" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
       <line x1="0" y1="0" x2="0" y2="5" stroke="${axis}" stroke-width="1.2"/></pattern></defs>`;
   if (cfg.catamaran) {
     /* to skrog antydet under dækket */
@@ -580,7 +587,7 @@ function deckPlanSVG(isl, bookableCap, free) {
   slots.forEach((sl, i) => {
     let fill = "none", stroke = axis, dash = "";
     if (i < booked) { fill = color; stroke = color; }
-    else if (i >= totalSlots - nonBookable) { fill = `url(#hatch-${isl.key})`; stroke = grid; }
+    else if (i >= totalSlots - nonBookable) { fill = `url(#hatch-${isl.key}-${deckKey || isl.key})`; stroke = grid; }
     else { fill = "none"; stroke = color; dash = ` stroke-dasharray="2.5 2"`; }
     svg += `<rect x="${sl.x.toFixed(1)}" y="${sl.y.toFixed(1)}" width="${sl.w.toFixed(1)}" height="${sl.h.toFixed(1)}" rx="2.5" fill="${fill}" stroke="${stroke}" stroke-width="1.2"${dash} opacity="${i < booked ? 0.95 : 0.9}"/>`;
   });
@@ -689,7 +696,7 @@ function renderIslands() {
     const rt = document.createElement("span"); rt.className = "route"; rt.textContent = isl.route; nm.append(rt);
     const big = document.createElement("div"); big.className = "big";
     big.textContent = avgOcc === null ? "–" : Math.round(avgOcc * 100);
-    const unit = document.createElement("span"); unit.className = "unit"; unit.textContent = " % booket · 7 dg"; big.append(unit);
+    const unit = document.createElement("span"); unit.className = "unit"; unit.textContent = " % reserveret · 7 dg"; big.append(unit);
     const stats = document.createElement("div"); stats.className = "stats";
     stats.textContent = `${next7.length} afgange · `;
     const al = document.createElement("span"); al.className = full ? "alert" : "";
@@ -1024,7 +1031,12 @@ function renderFerries() {
     const next = byIsland(isl.id).filter(d => !d.sailed && new Date(d.depart) > Date.now())
       .sort((a, b) => a.depart.localeCompare(b.depart))[0];
     const nm = document.createElement("div"); nm.className = "nm";
-    nm.textContent = isl.ferry;
+    const actualFerry = next && next.ferry_name ? next.ferry_name : isl.ferry;
+    nm.textContent = actualFerry;
+    if (next && next.ferry_substituted) {
+      const subn = document.createElement("span"); subn.className = "subst";
+      subn.textContent = " indsat på ruten"; nm.append(subn);
+    }
     const st = ferryState(isl.id);
     const chip = document.createElement("span");
     chip.className = "ferry-status " + st.state;
@@ -1034,7 +1046,7 @@ function renderFerries() {
     const sub = document.createElement("div"); sub.className = "sub";
     sub.textContent = next ? `Næste afgang: ${fmtDT(next.depart)} · ${next.crossing}` : "Ingen kommende afgange";
     card.append(ferryPictogram(iColor(isl), st, isl.name), chip, nm, sub);
-    const facts = FERRY_FACTS[isl.key];
+    const facts = FERRY_FACTS[ferryKeyOf(next) || isl.key];
     if (facts) {
       const sp = document.createElement("div"); sp.className = "ferry-specs";
       sp.textContent = `${facts.built} · ${facts.gt} BT · ${facts.loa} m · dybg. ${facts.draught} m · ${facts.knots} knob · ${facts.pax} pax · ${facts.cars} biler (officielt)`;
@@ -1051,20 +1063,21 @@ function renderFerries() {
     if (next && next.car_capacity_est) {
       const capa = next.car_capacity_est, free = next.final_avail_cars, taken = Math.max(0, capa - free);
       const deck = document.createElement("div"); deck.className = "deck deck-plan";
-      deck.innerHTML = deckPlanSVG(isl, capa, free);
-      const cfg = FERRY_DECK[isl.key];
+      const deckKey = ferryKeyOf(next) || isl.key;
+      deck.innerHTML = deckPlanSVG(isl, capa, free, deckKey);
+      const cfg = FERRY_DECK[deckKey];
       if (cfg) {
         const cap = document.createElement("div"); cap.className = "deckcap";
-        cap.textContent = `${isl.ferry.toUpperCase()} · ${String(cfg.L).replace(".", ",")} × ${String(cfg.B).replace(".", ",")} m · ${cfg.rows.length} baner · én plads = 5 m bil (lastbiler optager flere) · skitse`;
+        cap.textContent = `${actualFerry.toUpperCase()} · ${String(cfg.L).replace(".", ",")} × ${String(cfg.B).replace(".", ",")} m · ${cfg.rows.length} baner · én plads = 5 m bil (lastbiler optager flere) · skitse`;
         deck.append(cap);
       }
       const lab = document.createElement("div"); lab.className = "decklab";
       const bb = document.createElement("b");
       if (free === 0) { bb.textContent = "FULDT VOGNDÆK"; bb.className = "full"; }
-      else bb.textContent = `${taken} af ~${capa} pladser booket`;
+      else bb.textContent = `${taken} af ~${capa} enheder reserveret`;
       lab.append(bb, document.createTextNode(free === 0 ? "" : ` · ${free} ledige`));
       const leg = document.createElement("div"); leg.className = "decklegend";
-      leg.innerHTML = `<span><i class="k k-booked"></i>booket</span><span><i class="k k-free"></i>ledig</span><span><i class="k k-res"></i>ikke bookbar</span>`;
+      leg.innerHTML = `<span><i class="k k-booked"></i>reserveret</span><span><i class="k k-free"></i>ledig</span><span><i class="k k-res"></i>ikke bookbar</span>`;
       leg.querySelector(".k-booked").style.background = iColor(isl);
       leg.querySelector(".k-free").style.borderColor = iColor(isl);
       card.append(deck, lab, leg);
