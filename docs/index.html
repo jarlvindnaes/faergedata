@@ -81,6 +81,13 @@
     border-radius: 8px; padding: 5px 12px; font: inherit; font-size: 12px; cursor: pointer;
   }
   .subtitle { color: var(--text-secondary); margin: 6px 0 16px; max-width: 78ch; }
+  #serviceBanner {
+    border: 1px solid color-mix(in srgb, var(--warning) 55%, transparent);
+    background: color-mix(in srgb, var(--warning) 12%, var(--surface-1));
+    border-radius: 12px; padding: 10px 14px; margin: 0 0 14px; font-size: 13px;
+  }
+  #serviceBanner b { letter-spacing: 0.04em; }
+  #serviceBanner .sb-detail { color: var(--text-secondary); }
   .sectionlab {
     color: var(--text-muted); font-size: 11px; letter-spacing: 0.16em; margin: 26px 0 10px;
     display: flex; align-items: center; gap: 12px;
@@ -324,7 +331,7 @@
 <div class="wrap">
   <div class="topbar">
     <h1>FÆRGEDATA · SMÅLANDSFARVANDET</h1>
-    <span class="ver" title="Dashboardversion">v4.17</span>
+    <span class="ver" title="Dashboardversion">v4.18</span>
     <a href="historik.html" style="font-size:12px;align-self:center">HISTORIK →</a>
     <span class="live" id="meta">Indlæser …</span>
     <span class="live nextscrape" id="nextScrape" style="flex:0 0 auto"></span>
@@ -364,6 +371,7 @@
     </div>
   </details>
 
+  <div id="serviceBanner" hidden></div>
   <div class="islands" id="islands"></div>
   <div class="filters">
     <button class="chip" id="allChip">ALLE ØER</button>
@@ -492,6 +500,8 @@
   <div class="sectionlab">DATA</div>
   <details class="panel">
     <summary>ORDREBOG · alle afgange <span class="desc">— klik for at folde ud</span></summary>
+    <p style="margin:8px 0 0"><button id="csvBtn" class="chip" type="button">⬇ Download som CSV</button>
+    <span class="desc">alle viste afgange med endelig tilstand, kapacitet, færge og aflysningsstatus</span></p>
     <p class="desc" style="margin-top:8px">Endelig tilstand pr. afgang (sidste måling før afgang); kommende afgange viser aktuel status.</p>
     <div style="overflow-x:auto"><table id="depTable"></table></div>
   </details>
@@ -656,6 +666,28 @@ function forwardDays(routeId) {
   }
   return [...out.entries()].sort((a, b) => a[0].localeCompare(b[0]))
     .map(([day, arr]) => ({ day, occ: arr.reduce((a, b) => a + b) / arr.length }));
+}
+
+/* ---------- driftsstatus: opdages automatisk når dagens udbud ligger under normalen ---------- */
+function renderServiceBanner() {
+  const el = $("#serviceBanner"); if (!el || !DATA.supply) return;
+  const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  const wd = new Date(today).getDay();
+  const parts = [];
+  for (const isl of ISLANDS) {
+    const todayN = (DATA.supply.find(x => x.date === today && x.route_id === isl.id) || {}).n || 0;
+    const sameWd = DATA.supply.filter(x => x.route_id === isl.id && new Date(x.date).getDay() === wd);
+    const normal = Math.max(...sameWd.map(x => x.n), 0);
+    if (todayN && normal && todayN <= normal * 0.75)
+      parts.push(`${isl.name.charAt(0) + isl.name.slice(1).toLowerCase()} ${todayN} afgange i dag (normalt ${normal})`);
+  }
+  if (!parts.length) { el.hidden = true; return; }
+  el.hidden = false;
+  el.replaceChildren();
+  const b = document.createElement("b"); b.textContent = "⚠ REDUCERET SEJLPLAN · ";
+  const t = document.createElement("span"); t.className = "sb-detail";
+  t.textContent = parts.join(" · ") + " — detaljer i AFLYSNINGS-RADAR og UDBUD nedenfor.";
+  el.append(b, t);
 }
 
 /* ---------- ø-kort ---------- */
@@ -932,7 +964,12 @@ function renderPunctuality() {
     const act = (PUNCT.actual_by_day || []).filter(a => a.route_id === isl.id && a.date === lastDay)[0];
     const sub3 = document.createElement("div"); sub3.className = "t-sub";
     sub3.textContent = act ? `AIS ${lastDay.slice(5)}: ${act.n} faktiske afsejlinger` : "";
-    tile.append(nm, big, sub2, sub3);
+    /* median for dage med RIGTIG plan (ikke mønster) — vises når den findes */
+    const real = PUNCT.departures.filter(d => d.route_id === isl.id && d.plan_source === "booking" && d.delay_min !== null)
+      .map(d => d.delay_min).sort((a, b) => a - b);
+    const sub4 = document.createElement("div"); sub4.className = "t-sub";
+    if (real.length >= 5) sub4.textContent = `mod faktisk plan: ${real[Math.floor(real.length/2)] > 0 ? "+" : ""}${real[Math.floor(real.length/2)]} min median (${real.length} afg.)`;
+    tile.append(nm, big, sub2, sub3, sub4);
     return tile;
   }));
   const deps = PUNCT.departures.filter(d =>
@@ -1626,13 +1663,29 @@ function renderTable() {
 }
 function render() {
   _ferrySig = DATA ? ferrySignature() : "";
-  renderIslands(); renderRouteMap(); renderBoard(); renderFerries(); renderForward(); renderPunctuality();
+  renderServiceBanner(); renderIslands(); renderRouteMap(); renderBoard(); renderFerries(); renderForward(); renderPunctuality();
   renderAlerts(); renderCancels(); renderSupply(); renderHeat(); renderAggCurve();
   renderCurvePanel(); renderLead(); renderSlot(); renderHistory();
   renderFingerprint(); renderTable();
 }
+$("#csvBtn").onclick = () => {
+  const cols = ["depart", "crossing", "ferry_name", "ferry_substituted", "final_avail_cars",
+    "car_capacity_est", "cars_booked_est", "final_avail_pax", "max_pax", "soldout_cars",
+    "ever_soldout_cars", "soldout_lead_hours", "sailed", "cancelled", "cancel_kind",
+    "cancel_notice_hours", "final_obs_utc", "id"];
+  const esc = v => v === null || v === undefined ? "" : /[";\n]/.test(String(v)) ? '"' + String(v).replace(/"/g, '""') + '"' : String(v);
+  const lines = [cols.join(";")];
+  for (const d of [...visible()].sort((a, b) => a.depart.localeCompare(b.depart)))
+    lines.push(cols.map(c => esc(d[c])).join(";"));
+  const blob = new Blob(["\ufeff" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `faergedata-ordrebog-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click(); URL.revokeObjectURL(a.href);
+};
+
 Promise.all([
-  fetch("data.json").then(r => r.json()),
+fetch("data.json").then(r => r.json()),
   fetch("punctuality.json").then(r => r.ok ? r.json() : null).catch(() => null),
 ]).then(([d, pj]) => {
   DATA = d; PUNCT = pj;
